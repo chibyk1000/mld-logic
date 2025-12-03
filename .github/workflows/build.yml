@@ -1,9 +1,15 @@
 name: Build Electron App
+
 permissions:
   contents: write
 on:
   push:
-    branches: [main]
+    branches:
+      - main        # triggers on pushes to main
+    tags:
+      - 'v*'  
+    
+
   pull_request:
     branches: [main]
 
@@ -45,8 +51,7 @@ jobs:
       # 7️⃣ Create GitHub Release (optional)
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
-        with:
-            tag_name: auto
+       
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

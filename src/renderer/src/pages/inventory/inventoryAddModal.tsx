@@ -68,6 +68,7 @@ export function InventoryAddModal({
     resolver: yupResolver(schema),
     defaultValues: { vendorId: '', productId: '', warehouseId: '', quantity: 1 }
   })
+console.log(warehouses);
 
   const selectedVendor = vendors.find((v) => v.id === watch('vendorId'))
 

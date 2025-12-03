@@ -63,6 +63,7 @@ const getStatusConfig = (quantity: number) => {
       try {
         const list = await window.api.listWarehouses()
         setWarehouses(list.data)
+            console.log(list)
       } catch (err) {
         console.error(err)
         toast.error('Failed to load warehouse.')
@@ -80,13 +81,15 @@ const getStatusConfig = (quantity: number) => {
     const loadInventories = async () => {
       try {
         const list = await window.api.listInventory()
+    
+        
         setInventories(list.data)
       } catch (err) {
         console.error(err)
         toast.error('Failed to load inventories')
       }
     }
-  console.log(inventories);
+
   
     useEffect(() => {
       loadClients()

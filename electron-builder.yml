@@ -9,8 +9,19 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!dev.db'
+ 
 asarUnpack:
   - resources/**
+  
+  
+extraResources:
+  # copy prisma DB → packaged
+  - from: data.db
+    to: data.db
+
+ 
+
 win:
   executableName: mld-logistics
 nsis:

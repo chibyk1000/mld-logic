@@ -50,7 +50,10 @@ jobs:
 
       # 7️⃣ Create GitHub Release (optional)
       - name: Create GitHub Release
+        
         uses: softprops/action-gh-release@v1
+        with:
+            tag_name: ${{ github.ref_name }}  # uses the pushed tag
        
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

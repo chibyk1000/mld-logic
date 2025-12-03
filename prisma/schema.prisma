@@ -1,0 +1,272 @@
+// This is your Prisma schema file.
+// learn more at https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * USERS
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+model User {
+  id       String @id @default(uuid())
+  email    String @unique
+  password String
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * WAREHOUSE
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+model Warehouse {
+  id          String  @id @default(cuid())
+  name        String
+  location    String
+  capacity    String
+  description String?
+  items       Int     @default(0)
+  status      String  @default("active")
+
+  agents      Agent[]
+  inventories Inventory[] // vendor stock per warehouse
+
+  vendors VendorOnWarehouse[] // relationship to vendor storage
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deliveryOrders DeliveryOrder[]
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * AGENTS
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+model Agent {
+  id       String @id @default(cuid())
+  fullName String
+  email    String @unique
+  phone    String
+  status   String @default("active")
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  warehouseId String
+
+  // Delivery jobs assigned
+  deliveryOrders DeliveryOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * CLIENTS
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// Final customers receiving deliveries.
+model Client {
+  id       String  @id @default(cuid())
+  fullName String
+  phone    String
+  email    String?
+  address  String?
+
+  deliveryOrders DeliveryOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * VENDOR
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// E-commerce vendors who store items & ship to clients.
+model Vendor {
+  id          String  @id @default(cuid())
+  companyName String
+  contactName String?
+  phone       String?
+  email       String? @unique
+  address     String?
+
+  status String @default("active")
+
+  // Warehouses they store inventory in
+  warehouses VendorOnWarehouse[]
+  inventory  Inventory[]
+  // Vendor products
+  products   Product[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deliveryOrders DeliveryOrder[]
+}
+
+/// Relationship: Vendor stores products in a warehouse
+model VendorOnWarehouse {
+  id          String    @id @default(cuid())
+  vendor      Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendorId    String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  warehouseId String
+
+  // optional metadata
+  contractStart DateTime?
+  contractEnd   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([vendorId, warehouseId])
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * INVENTORY
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// Stock record at warehouse for a vendor.
+model Inventory {
+  id       String @id @default(cuid())
+  vendor   Vendor @relation(fields: [vendorId], references: [id])
+  vendorId String
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  warehouseId String
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  quantity Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([vendorId, warehouseId, productId])
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * PRODUCT
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// Actual item SKU belonging to a vendor.
+model Product {
+  id       String @id @default(cuid())
+  vendor   Vendor @relation(fields: [vendorId], references: [id])
+  vendorId String
+
+  name        String
+  description String?
+  price       Float
+  sku         String? @unique
+
+  inventories    Inventory[]
+  deliveryOrders DeliveryOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * DELIVERY ORDERS
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// Logistics job: vendor sends product → client.
+model DeliveryOrder {
+  id String @id @default(cuid())
+
+  vendor   Vendor? @relation(fields: [vendorId], references: [id])
+  vendorId String?
+
+  product   Product? @relation(fields: [productId], references: [id])
+  productId String?
+
+  quantity Int
+
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String?
+
+  agent   Agent?  @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  agentId String?
+
+  pickupWarehouse Warehouse? @relation(fields: [warehouseId], references: [id])
+  warehouseId     String?
+destination String?
+  cost   Float
+  status DeliveryStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * ENUMS
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}

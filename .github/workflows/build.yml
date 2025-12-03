@@ -1,10 +1,10 @@
 name: Build Electron App
-
 permissions:
   contents: write
-
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
 
 jobs:
@@ -34,35 +34,25 @@ jobs:
       - name: Build Electron .exe
         run: npm run build:win
 
-      # 6️⃣ Upload artifact to Actions
+
+      # 6️⃣ Upload artifact
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-build
           path: dist/
 
-      # 7️⃣ Create a short SHA tag
-      - name: Create Git tag
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          TAG_NAME="release-${GITHUB_SHA::7}"
-          git tag -a $TAG_NAME -m "Release $TAG_NAME"
-          git push origin $TAG_NAME
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 8️⃣ Create GitHub Release
+      # 7️⃣ Create GitHub Release (optional)
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: release-${{ github.sha_short }}
+            tag_name: auto
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 9️⃣ Upload .exe to GitHub Release
+      # 8️⃣ Upload .exe to GitHub Release
       - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           files: dist/*.exe
         env:

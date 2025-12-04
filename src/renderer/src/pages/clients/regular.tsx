@@ -49,9 +49,60 @@ export default function RegularClients() {
   const [selectedClient, setSelectedClient] = useState<any>(null)
   const [clients, setClients] = useState<Clients[]>([])
   const [orders, setOrders] = useState<Orders[]>([])
+  const [totals, setTotals] = useState<{
+    successRate: number
+    totalDelivered: number
+    totalFailed: number
+    totalRequested: number
+    totalRevenue: number
+  }>({
+    totalRequested: 1,
+    totalDelivered: 0,
+    totalFailed: 0,
+    totalRevenue: 0,
+    successRate: 0
+  })
+    const [stats, setStats] = useState<{
+      weekly: {
+        period: string
+        requested: number
+        delivered: number
+        failed: number
+      }[]
+      monthly: {
+        period: string
+        requested: number
+        delivered: number
+        failed: number
+      }[]
+      
+    }>({
+      monthly: [],
+      weekly: [],
+   
+    })
+
+    const loadStats = async () => {
+      try {
+        const list = await window.api.getClientStats()
+        console.log(list)
+        if (list) {
+          
+          setStats(list.data)
+          setTotals(list.data .totals)
+        }
+        } catch (err) {
+          console.error(err)
+        toast.error('Failed to load products')
+      }
+  } 
+  console.log(clients);
+  
   const loadClients = async () => {
     try {
       const list = await window.api.listClients()
+  
+      
       setClients(list.data)
     } catch (err) {
       console.error(err)
@@ -61,6 +112,8 @@ export default function RegularClients() {
   const loadOrders = async () => {
     try {
       const list = await window.api.listDeliveryOrders()
+     
+      
       setOrders(list.data)
     } catch (err) {
       console.error(err)
@@ -71,6 +124,7 @@ export default function RegularClients() {
  
   useEffect(() => {
     loadClients()
+    loadStats()
     loadOrders()
   }, [])
 
@@ -95,6 +149,7 @@ export default function RegularClients() {
     }
   }
 
+  
   // Delete client
   const handleDeleteClient = async (id: string) => {
     if (!confirm('Are you sure you want to delete this client?')) return
@@ -112,6 +167,10 @@ export default function RegularClients() {
     setSelectedClient(client)
     setIsEditOpen(true)
   }
+
+  const filteredOrders = orders.filter((order) => order.client !== null)
+
+  
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -164,14 +223,20 @@ export default function RegularClients() {
               <OrderForm
                 onClose={() => setIsOrderDialogOpen(false)}
                 clients={clients}
+
                 onSubmit={async (data) => {
                   try {
+
+                    if (!data.client) {
+                      return  toast.error("please select client")
+                    }
                     const payload = {
                       clientId: data.client,
                       destination: data.destination,
                       quantity: data.quantity,
-                      cost: Number(data.serviceCost)
+                      serviceCost: Number(data.serviceCost)
                     } as any
+
 
                     const res = await window.api.createClientDeliveryOrder(payload)
 
@@ -185,8 +250,10 @@ export default function RegularClients() {
                     toast.success('Order created ✔️')
                     setIsOrderDialogOpen(false)
                     await loadClients()
+                    return
                   } catch {
                     toast.error('Failed to create order')
+                    return
                   }
                 }}
                 clientType="regular"
@@ -211,12 +278,12 @@ export default function RegularClients() {
         </DialogContent>
       </Dialog>
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard title="Total Customers" value="156" icon={Users} />
-        <MetricCard title="Completed Orders" value="439" icon={TrendingUp} variant="success" />
-        <MetricCard title="Total Revenue" value="$18,670" icon={DollarSign} variant="success" />
+        <MetricCard title="Total Customers" value={clients.length } icon={Users} />
+        <MetricCard title="Completed Orders" value={totals?.totalDelivered} icon={TrendingUp} variant="success" />
+        <MetricCard title="Total Revenue" value={totals?.totalRevenue} icon={DollarSign} variant="success" />
       </div>
 
-      <ClientPerformanceAnalytics />
+      <ClientPerformanceAnalytics setStats={setStats} stats={stats}/>
 
       <Card>
         <CardHeader>
@@ -229,21 +296,21 @@ export default function RegularClients() {
                 <TableHead>Order ID</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Phone</TableHead>
-                <TableHead>Category</TableHead>
+          
                 <TableHead>Cost</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orders.map((order) => (
+              {filteredOrders.map((order) => (
                 <TableRow key={order.id}>
                   <TableCell className="font-medium">{order.id}</TableCell>
                   {/*  @ts-ignore */}
                   <TableCell>{order?.client.fullName}</TableCell>
                   {/*  @ts-ignore */}
                   <TableCell>{order?.client.phone}</TableCell>
-                  <TableCell>{/* <Badge variant="outline">{order.}</Badge> */}</TableCell>
-                  <TableCell className="font-medium">{order.cost}</TableCell>
+                {/* @ts-ignore */}
+                  <TableCell className="font-medium">{order.deliveryCost + order.serviceCost}</TableCell>
                   <TableCell>
                     <Badge variant={order.status === 'COMPLETED' ? 'default' : 'secondary'}>
                       {order.status}

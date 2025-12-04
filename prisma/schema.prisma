@@ -243,6 +243,29 @@ model DeliveryOrder {
   agentId String?
 
   pickupWarehouse Warehouse? @relation(fields: [warehouseId], references: [id])
+
+
+  
+  /**
+   * ---------------------------------------------------------
+   *  VENDOR PICKUP INFO
+   * ---------------------------------------------------------
+   */
+  pickupContactName    String?
+  pickupContactPhone   String?
+  pickupInstructions   String?
+
+  /**
+   * ---------------------------------------------------------
+   *  DELIVERY INFO (TO CLIENT OR DESIGNATED LOCATION)
+   * ---------------------------------------------------------
+   */
+  deliveryContactName   String?
+  deliveryContactPhone  String?
+  deliveryInstructions  String?
+  deliveryAddress       String?
+  sensitivity Sensitivity @default(MEDIUM)
+
   warehouseId     String?
 destination String?
   cost   Float
@@ -269,4 +292,11 @@ enum DeliveryStatus {
   IN_TRANSIT
   COMPLETED
   CANCELLED
+}
+
+
+enum Sensitivity {
+HIGH
+MEDIUM
+LOW
 }

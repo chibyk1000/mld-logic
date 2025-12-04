@@ -20,7 +20,7 @@ export type RegularClientFormValues = {
   email?: string
   address: string
 }
-
+    // @ts-ignore
 const schema: yup.Schema<RegularClientFormValues> = yup.object({
   fullName: yup.string().required('Client name is required'),
   phone: yup
@@ -39,6 +39,7 @@ export function RegularClientForm({
   onClose: () => void
 }) {
   const form = useForm<RegularClientFormValues>({
+    // @ts-ignore
     resolver: yupResolver(schema),
     defaultValues: {
       fullName: '',

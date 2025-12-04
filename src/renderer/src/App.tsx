@@ -10,6 +10,8 @@ import Inventory from './pages/inventory/Inventory'
 import Remittance from './pages/remittance'
 import Accounting from './pages/accounting'
 import { ToastContainer } from 'react-toastify'
+import { SettingsPage } from './pages/settings'
+import { OrdersList } from './pages/orders'
 const App = () => {
   return (
     <div>
@@ -24,6 +26,8 @@ const App = () => {
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/remittance" element={<Remittance />} />
           <Route path="/accounting" element={<Accounting />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/orders" element={<OrdersList />} />
         </Route>
       </Routes>
       <ToastContainer />

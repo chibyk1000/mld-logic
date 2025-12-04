@@ -9,14 +9,32 @@ import {
   TableHead,
   TableHeader
 } from '@renderer/components/ui/table'
+import { useEffect, useState } from 'react'
+import { toast } from 'react-toastify'
 
 export function RecentAgentsTable() {
-  const agents = [
-    { name: 'John Smith', orders: 56, status: 'active' },
-    { name: 'Sarah Johnson', orders: 48, status: 'active' },
-    { name: 'Mike Davis', orders: 31, status: 'active' }
-  ]
 
+  
+
+    const [agents, setAgents] = useState<any>([])
+        const loadClients = async () => {
+          try {
+            const list = await window.api.getDashboardRecentEntities()
+           
+  
+            setAgents(list.data.recentAgents)
+          } catch (err) {
+            console.error(err)
+            toast.error('Failed to load clients.')
+          }
+        }
+  
+        useEffect(() => {
+          loadClients()
+        }, [])
+  
+
+  
   return (
     <Card>
       <CardHeader>
@@ -27,15 +45,15 @@ export function RecentAgentsTable() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Orders</TableHead>
+              <TableHead>Phone</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {agents.map((a, i) => (
               <TableRow key={i}>
-                <TableCell>{a.name}</TableCell>
-                <TableCell>{a.orders}</TableCell>
+                <TableCell>{a.fullName}</TableCell>
+                <TableCell>{a.phone}</TableCell>
                 <TableCell className="capitalize">{a.status}</TableCell>
               </TableRow>
             ))}

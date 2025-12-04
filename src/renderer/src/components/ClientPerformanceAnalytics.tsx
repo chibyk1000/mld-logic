@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Dispatch, SetStateAction, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
 import {
@@ -14,21 +14,7 @@ import {
 } from 'recharts'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@renderer/components/ui/chart'
 
-const weeklyData = [
-  { period: 'Week 1', requested: 45, delivered: 42, failed: 3 },
-  { period: 'Week 2', requested: 52, delivered: 48, failed: 4 },
-  { period: 'Week 3', requested: 48, delivered: 46, failed: 2 },
-  { period: 'Week 4', requested: 61, delivered: 58, failed: 3 }
-]
 
-const monthlyData = [
-  { period: 'Jan', requested: 156, delivered: 148, failed: 8 },
-  { period: 'Feb', requested: 178, delivered: 165, failed: 13 },
-  { period: 'Mar', requested: 203, delivered: 194, failed: 9 },
-  { period: 'Apr', requested: 189, delivered: 182, failed: 7 },
-  { period: 'May', requested: 215, delivered: 208, failed: 7 },
-  { period: 'Jun', requested: 234, delivered: 228, failed: 6 }
-]
 
 const chartConfig = {
   requested: {
@@ -45,13 +31,47 @@ const chartConfig = {
   }
 }
 
-export function ClientPerformanceAnalytics() {
-  const [period, setPeriod] = useState<'weekly' | 'monthly'>('weekly')
-  const data = period === 'weekly' ? weeklyData : monthlyData
+export function ClientPerformanceAnalytics({ stats,  }: {
+  stats: {
+    weekly: {
+      period: string;
+      requested: number;
+      delivered: number;
+      failed: number;
+    }[];
+    monthly: {
+      period: string;
+      requested: number;
+      delivered: number;
+      failed: number;
+    }[]
+  }
 
+  setStats: Dispatch<SetStateAction<{
+    weekly: {
+      period: string;
+      requested: number;
+      delivered: number;
+      failed: number;
+    }[];
+    monthly: {
+      period: string;
+      requested: number;
+      delivered: number;
+      failed: number;
+    }[]
+  }>>;
+
+}) {
+  const [period, setPeriod] = useState<'weekly' | 'monthly'>('weekly')
+
+
+    const data = period === 'weekly' ? stats.weekly : stats.monthly
   const totalRequested = data.reduce((sum, item) => sum + item.requested, 0)
   const totalDelivered = data.reduce((sum, item) => sum + item.delivered, 0)
-  const successRate = ((totalDelivered / totalRequested) * 100).toFixed(1)
+const successRate =
+  totalRequested > 0 ? Number(((totalDelivered / totalRequested) * 100).toFixed(1)) : 0
+
 
   return (
     <Card>
@@ -83,7 +103,7 @@ export function ClientPerformanceAnalytics() {
           <TabsContent value="weekly" className="space-y-4">
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={weeklyData}>
+                <BarChart data={stats.weekly}>
                   <CartesianGrid strokeDasharray="3 3" stroke="" />
                   <XAxis dataKey="period" stroke="hsl(var(--muted-foreground))" />
                   <YAxis stroke="hsl(var(--muted-foreground))" />
@@ -100,7 +120,7 @@ export function ClientPerformanceAnalytics() {
           <TabsContent value="monthly" className="space-y-4">
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={monthlyData}>
+                <LineChart data={stats.monthly}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="period" stroke="hsl(var(--muted-foreground))" />
                   <YAxis stroke="hsl(var(--muted-foreground))" />

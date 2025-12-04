@@ -53,11 +53,13 @@ declare global {
       updateClient: (id: string, data: any) => Promise<any>
       deleteClient: (id: string) => Promise<any>
       getClient: (id: string) => Promise<any>
+      getClientStats: () => Promise<any>
 
       // -----------------------------
       // VENDORS
       // -----------------------------
       listVendors: () => Promise<any>
+      getVendorStats: () => Promise<any>
       createVendor: (data: {
         companyName: string
         contactName?: string
@@ -118,6 +120,41 @@ declare global {
       updateDeliveryStatus: (orderId: string, status: string) => Promise<any>
       deleteDeliveryOrder: (id: string) => Promise<any>
       getDeliveryOrder: (id: string) => Promise<any>
+      listRemittances: () => Promise<any>
+      createRemittance: (payload: {
+        clientId: string
+        periodStart: string
+        periodEnd: string
+        orders: {
+          orderId: string
+          expectedAmount: number
+        }[]
+      }) => Promise<any>
+      addRemittancePayment: (payload: {
+        remittanceId: string
+        amount: number
+        method?: string | undefined
+        reference?: string | undefined
+        notes?: string | undefined
+      }) => Promise<any>
+
+      getRemittance: (id: string) => Promise<any>
+
+      // -----------------------------
+      // ACCOUNTING
+      // -----------------------------
+      getIncomeRecords: (period?: 'daily' | 'weekly' | 'monthly') => Promise<any>
+      getExpenseRecords: (period?: 'daily' | 'weekly' | 'monthly') => Promise<any>
+      getAccountingSummary: (period?: 'daily' | 'weekly' | 'monthly') => Promise<any>
+      createExpense: (data: {
+        type: string
+        description?: string | undefined
+        amount: number
+      }) => Promise<any>
+      getDashboardMetrics: () => Promise<any>
+      getDashboardShipmentAnalytics: () => Promise<any>
+      getDashboardOrdersByLocation: () => Promise<any>
+      getDashboardRecentEntities: () => Promise<any>
     }
   }
 }

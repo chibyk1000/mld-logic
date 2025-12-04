@@ -43,7 +43,32 @@ const [products, setProducts] = useState([])
   const [isProductDialogOpen, setIsProductDialogOpen] = useState(false)
 
   const [selectedClient, setSelectedClient] = useState<Vendor | null>(null)
+  const [stats, setStats] = useState<{
+    weekly: {
+      period: string
+      requested: number
+      delivered: number
+      failed: number
+    }[]
+    monthly: {
+      period: string
+      requested: number
+      delivered: number
+      failed: number
+    }[]
+  }>({ monthly: [], weekly: [] })
 
+  const loadStats = async () => {
+    try {
+      const list = await window.api.getVendorStats()
+      console.log(list)
+      setStats(list.data)
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load products')
+    }
+  }
+  
   /**
    * Load Vendors
    */
@@ -77,6 +102,7 @@ const [products, setProducts] = useState([])
 
   useEffect(() => {
     loadClients()
+    loadStats()
     loadWarehouses()
     loadProducts()
   }, [])
@@ -94,6 +120,7 @@ const [products, setProducts] = useState([])
       toast.error('Error adding client')
     }
   }
+console.log(clients);
 
   /**
    * Edit Client
@@ -126,6 +153,7 @@ const [products, setProducts] = useState([])
       toast.error('Delete failed')
     }
   }
+
 
   /**
    * Open Edit
@@ -180,8 +208,20 @@ const payload = {
   warehouseId: orderData.warehouse,
   productId: orderData.product,
   quantity: orderData.quantity,
-  cost: orderData.serviceCost
-                    } as any
+  deliveryCost: Number(orderData.deliveryCost),
+  serviceCost: Number(orderData.serviceCost),
+  additionalCost: Number(orderData.additionalCost),
+  collectPayment: orderData.collectPayment,
+ 
+  pickupContactName: orderData.pickupContactName,
+  pickupContactPhone: orderData.pickupContactPhone,
+  pickupInstructions: orderData.pickupInstructions,
+  deliveryContactName: orderData.deliveryContactName,
+  deliveryContactPhone: orderData.deliveryContactPhone,
+  deliveryInstructions: orderData.deliveryInstructions,
+  deliveryAddress: orderData.deliveryAddress,
+  sensitivity: orderData.sensitivity
+} as any
                     
                 
                     const res = await window.api.createDeliveryOrder(payload)
@@ -249,7 +289,8 @@ const payload = {
         <MetricCard title="Total VIP Clients" value={clients?.length} icon={Package} />
         <MetricCard
           title="Total Orders"
-          value={clients.reduce((a, c) => a + c.deliveryOrders?.length, 0)}
+          // @ts-ignore
+          value={clients.reduce((a, c) => a + c.orders?.length, 0)}
           icon={TrendingUp}
           variant="success"
         />
@@ -261,7 +302,7 @@ const payload = {
         />
       </div>
 
-      <ClientPerformanceAnalytics />
+      <ClientPerformanceAnalytics setStats={setStats} stats={stats}/>
 
       {/* TABLE */}
       <Card>

@@ -9,14 +9,30 @@ import {
   TableHead,
   TableHeader
 } from '@renderer/components/ui/table'
+import { useEffect, useState } from 'react'
+import { toast } from 'react-toastify'
 
 export function RecentWarehousesTable() {
-  const warehouses = [
-    { name: 'Central Hub', capacity: '85%' },
-    { name: 'West Coast Depot', capacity: '62%' },
-    { name: 'Southern Storage', capacity: '45%' }
-  ]
+ 
 
+  const [warehouses, setWarehouses] = useState<any>([])
+          const loadClients = async () => {
+            try {
+              const list = await window.api.getDashboardRecentEntities()
+             
+    console.log(list);
+    
+              setWarehouses(list.data.recentWarehouses)
+            } catch (err) {
+              console.error(err)
+              toast.error('Failed to load clients.')
+            }
+          }
+    
+          useEffect(() => {
+            loadClients()
+          }, [])
+    
   return (
     <Card>
       <CardHeader>
@@ -27,6 +43,7 @@ export function RecentWarehousesTable() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Location</TableHead>
               <TableHead>Capacity</TableHead>
             </TableRow>
           </TableHeader>
@@ -34,6 +51,7 @@ export function RecentWarehousesTable() {
             {warehouses.map((w, i) => (
               <TableRow key={i}>
                 <TableCell>{w.name}</TableCell>
+                <TableCell>{w.location}</TableCell>
                 <TableCell>{w.capacity}</TableCell>
               </TableRow>
             ))}

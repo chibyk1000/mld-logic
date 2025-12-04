@@ -55,7 +55,7 @@ const warehouseSchema = yup.object({
   name: yup.string().required('Warehouse name is required'),
   location: yup.string().required('Location is required'),
   capacity: yup
-    .string()
+    .number()
 
     .required('Capacity is required'),
   description: yup.string().required('Description is required')
@@ -85,7 +85,7 @@ const handleAddWarehouse = async (data: WarehouseFormValues) => {
   try {
     // Call the Electron IPC handler
 
-    const result = await window.api.createWarehouse(data)
+    const result = await window.api.createWarehouse(data as any)
 
     if (result.error) {
       // Handle error from main process
@@ -105,7 +105,7 @@ const handleAddWarehouse = async (data: WarehouseFormValues) => {
   }
 }
   
-const handleSubmitEdit = async (data: WarehouseFormValues) => {
+const handleSubmitEdit = async (data: any) => {
   try {
     // Call the Electron IPC handler
 
@@ -175,6 +175,15 @@ const handleSubmitEdit = async (data: WarehouseFormValues) => {
     setSelectedWarehouse(warehouse)
     setOpenView(true)
   }
+const avgUtilization =
+  warehouses.length > 0
+    ? (warehouses.reduce((sum, w) => {
+        const utilization = w.items / Number(w.capacity) // percentage for this warehouse
+        return sum + utilization
+      }, 0) /
+        warehouses.length) *
+      100
+    : 0
 
 
   return (
@@ -207,7 +216,7 @@ const handleSubmitEdit = async (data: WarehouseFormValues) => {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">12</div>
+            <div className="text-2xl font-bold">{warehouses.length}</div>
           </CardContent>
         </Card>
 
@@ -222,7 +231,10 @@ const handleSubmitEdit = async (data: WarehouseFormValues) => {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">15,490</div>
+            <div className="text-2xl font-bold">
+              {/* @ts-ignore */}
+              {warehouses?.reduce((sum, w) => sum + w.capacity, 0)}
+            </div>
           </CardContent>
         </Card>
 
@@ -237,7 +249,7 @@ const handleSubmitEdit = async (data: WarehouseFormValues) => {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">64%</div>
+            <div className="text-2xl font-bold">{avgUtilization }%</div>
           </CardContent>
         </Card>
       </div>
@@ -332,7 +344,7 @@ const handleSubmitEdit = async (data: WarehouseFormValues) => {
 
             <div className="space-y-1">
               <Label>Capacity</Label>
-              <Input placeholder="Example: 85%" {...register('capacity')} />
+              <Input placeholder="Example: 8500" {...register('capacity')} type='number'/>
               {errors.capacity && <p className="text-red-500 text-sm">{errors.capacity.message}</p>}
             </div>
 

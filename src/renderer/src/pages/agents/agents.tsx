@@ -50,7 +50,13 @@ const agentSchema = yup.object({
   status: yup.string().oneOf(['active', 'inactive']).required('Status is required')
 })
 
-type AgentFormValues = yup.InferType<typeof agentSchema>
+type AgentFormValues = {
+  name: string
+  email: string
+  phone: string
+  warehouse: string
+  status: 'active' | 'inactive' 
+}
 
 type AgentTypes = Prisma.AgentGetPayload<{ include: { deliveryOrders: true; warehouse: true } }>
 export default function AgentList() {
@@ -69,14 +75,23 @@ export default function AgentList() {
     control,
     formState: { errors }
   } = useForm<AgentFormValues>({
-    resolver: yupResolver(agentSchema)
+    // @ts-ignore
+    resolver: yupResolver(agentSchema),
+    defaultValues: {
+      email: "",
+      name: "",
+      phone: "",
+      status: "active",
+      warehouse:""
+    }
   })
 
   const submitHandler = async (data: AgentFormValues) => {
     try {
-       const { name, warehouse, ...rest } = data
+       const { name, warehouse,  ...rest } = data
       const result = await window.api.createAgent({
         ...rest,
+        
         fullName: data.name,
         warehouseId: data.warehouse
       })
@@ -95,7 +110,8 @@ export default function AgentList() {
 
         setAgents(d.data)
       reset()
-      setOpenEdit(false)
+ 
+      setOpenAdd(false)
     } catch (error) {}
   }
   const [reportPeriod, setReportPeriod] = useState<'weekly' | 'monthly'>('weekly')
@@ -107,7 +123,7 @@ export default function AgentList() {
     setValue('phone', agent.phone)
     setValue('warehouse', agent.warehouse.id)
     // setValue('role', agent.role)
-    setValue('status', agent.status)
+    setValue('status', agent.status  as any)
   }
   
 
@@ -250,7 +266,7 @@ export default function AgentList() {
             <Users className="h-5 w-5 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">48</div>
+            <div className="text-2xl font-bold">{agents.length }</div>
           </CardContent>
         </Card>
 
@@ -263,12 +279,12 @@ export default function AgentList() {
             <UserCheck className="h-5 w-5 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">42</div>
+            <div className="text-2xl font-bold">{agents.filter((ag)=>ag.status === "active").length }</div>
           </CardContent>
         </Card>
 
         {/* Avg Rating */}
-        <Card>
+        {/* <Card>
           <CardHeader className="pb-2 flex items-center justify-between">
             <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Rating</CardTitle>
             <TrendingUp className="h-5 w-5 text-primary" />
@@ -278,7 +294,7 @@ export default function AgentList() {
               4.7 <Star className="h-5 w-5 fill-warning text-warning" />
             </div>
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
 
       <div className="space-y-6">
@@ -395,6 +411,7 @@ export default function AgentList() {
             <DialogTitle>Edit Agent</DialogTitle>
           </DialogHeader>
           {selectedAgent && (
+            // @ts-ignore
             <form className="space-y-4 mt-4" onSubmit={handleSubmit(submitEditHandler)}>
               <div className="space-y-1">
                 <Label>Full Name</Label>
@@ -470,6 +487,7 @@ export default function AgentList() {
           <DialogHeader>
             <DialogTitle>Add Agent</DialogTitle>
           </DialogHeader>
+          {/* @ts-ignore */}
           <form className="space-y-4 mt-4" onSubmit={handleSubmit(submitHandler)}>
             <div className="space-y-1">
               <Label>Full Name</Label>
@@ -519,7 +537,7 @@ export default function AgentList() {
 
             <div className="space-y-1">
               <Label>Status</Label>
-              <Select value={watch().status} onValueChange={(v) => setValue('status', v)}>
+              <Select value={watch().status} onValueChange={(v) => setValue('status', v as any)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>

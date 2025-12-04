@@ -1,60 +1,138 @@
-import { MetricCard } from "@renderer/components/MetricCard";
-import { Badge } from "@renderer/components/ui/badge";
-import { Button } from "@renderer/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@renderer/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@renderer/components/ui/table";
-import { CheckCircle, Clock, DollarSign } from "lucide-react";
-
-
-const remittances = [
-  {
-    id: 1,
-    client: "TechStore Inc",
-    orderCount: 15,
-    paymentReceived: "$3,450",
-    serviceCost: "$450",
-    remittanceDue: "$3,000",
-    status: "pending",
-  },
-  {
-    id: 2,
-    client: "Fashion Hub",
-    orderCount: 22,
-    paymentReceived: "$5,280",
-    serviceCost: "$660",
-    remittanceDue: "$4,620",
-    status: "pending",
-  },
-  {
-    id: 3,
-    client: "Electronics World",
-    orderCount: 18,
-    paymentReceived: "$4,140",
-    serviceCost: "$540",
-    remittanceDue: "$3,600",
-    status: "completed",
-  },
-];
+import { MetricCard } from '@renderer/components/MetricCard'
+import { Badge } from '@renderer/components/ui/badge'
+import { Button } from '@renderer/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from '@renderer/components/ui/table'
+import { CheckCircle, Clock, DollarSign, } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { toast } from 'react-toastify'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter
+} from '@renderer/components/ui/dialog'
+import dayjs from 'dayjs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/components/ui/select'
+import { Input } from '@renderer/components/ui/input'
 
 export default function Remittance() {
+  const [remittances, setRemittance] = useState<any[]>([])
+  const [clients, setClients] = useState<any[]>([])
+  const [orders, setOrders] = useState<any[]>([])
+  const [openModal, setOpenModal] = useState(false)
+  const [openCreateModal, setOpenCreateModal] = useState(false)
+  const [selectedRemittance, setSelectedRemittance] = useState<any>(null)
+  const [newRemittance, setNewRemittance] = useState({
+    clientId: '',
+    periodStart: dayjs().format('YYYY-MM-DD'),
+    periodEnd: dayjs().add(7, 'day').format('YYYY-MM-DD'),
+    selectedOrders: [] as any[]
+  })
+
+  const loadRemittance = async () => {
+    try {
+      const list = await window.api.listRemittances()
+      console.log(list);
+      
+      setRemittance(list.data)
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load remittances.')
+    }
+  }
+
+  const loadClientsAndOrders = async () => {
+    try {
+      const clientList = await window.api.listClients()
+      const orderList = await window.api.listDeliveryOrders()
+      setClients(clientList.data)
+      setOrders(orderList.data)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  useEffect(() => {
+    loadRemittance()
+    loadClientsAndOrders()
+  }, [])
+
+  const markAsPaid = async () => {
+    if (!selectedRemittance) return
+    try {
+      await window.api.addRemittancePayment({
+        remittanceId: selectedRemittance.id,
+        amount: parseFloat(selectedRemittance.totalCost),
+        method: 'CASH',
+        reference: 'Manual',
+        notes: 'Marked as paid via dashboard'
+      })
+      toast.success('Remittance marked as paid')
+      setOpenModal(false)
+      setSelectedRemittance(null)
+      loadRemittance()
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to mark remittance as paid')
+    }
+  }
+
+  const createRemittance = async () => {
+    if (!newRemittance.clientId || newRemittance.selectedOrders.length === 0) {
+      toast.error('Please select a client and at least one order')
+      return
+    }
+    try {
+      await window.api.createRemittance({
+        clientId: newRemittance.clientId,
+        periodStart: newRemittance.periodStart,
+        periodEnd: newRemittance.periodEnd,
+        orders: newRemittance.selectedOrders
+      })
+      toast.success('Remittance created successfully')
+      setOpenCreateModal(false)
+      setNewRemittance({
+        clientId: '',
+        periodStart: dayjs().format('YYYY-MM-DD'),
+        periodEnd: dayjs().add(7, 'day').format('YYYY-MM-DD'),
+        selectedOrders: []
+      })
+      loadRemittance()
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to create remittance')
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold text-foreground">
-          Remittance Ledger
-        </h2>
-        <p className="text-muted-foreground mt-1">
-          Track vendor payments and remittances
-        </p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-3xl font-bold text-foreground">Remittance Ledger</h2>
+          <p className="text-muted-foreground mt-1">Track vendor payments and remittances</p>
+        </div>
+        {/* <Button
+          onClick={() => {
+            setOpenCreateModal(true)
+            loadClientsAndOrders()
+          }}
+          icon={Plus}
+        >
+          New Remittance
+        </Button> */}
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard
-          title="Total Pending"
-          value="$12,450"
-          icon={Clock}
-          variant="warning"
-        />
+        <MetricCard title="Total Pending" value="$12,450" icon={Clock} variant="warning" />
         <MetricCard
           title="Completed This Month"
           value="$28,340"
@@ -69,63 +147,183 @@ export default function Remittance() {
         />
       </div>
 
+      {/* Remittance Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Vendor Remittances</CardTitle>
+          <CardTitle>Remittances</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Client</TableHead>
+                <TableHead>Client / Vendor</TableHead>
                 <TableHead className="text-center">Orders</TableHead>
                 <TableHead className="text-right">Payment Received</TableHead>
                 <TableHead className="text-right">Service Cost</TableHead>
+                <TableHead className="text-right">Total Cost</TableHead>
                 <TableHead className="text-right">Remittance Due</TableHead>
+                <TableHead className="text-right">Days Left</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {remittances.map((remittance) => (
-                <TableRow key={remittance.id}>
-                  <TableCell className="font-medium">
-                    {remittance.client}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {remittance.orderCount}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {remittance.paymentReceived}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {remittance.serviceCost}
-                  </TableCell>
-                  <TableCell className="text-right font-semibold">
-                    {remittance.remittanceDue}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        remittance.status === "completed"
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      {remittance.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {remittance.status === "pending" && (
-                      <Button size="sm">Mark Paid</Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {remittances.map((remittance) => {
+                const daysLeft = dayjs(remittance.periodEnd).diff(dayjs(), 'day')
+                return (
+                  <TableRow key={remittance.id}>
+                    <TableCell className="font-medium">
+                      {remittance.clientName || remittance.vendorName}
+                    </TableCell>
+                    <TableCell className="text-center">{remittance.orderCount}</TableCell>
+                    <TableCell className="text-right">{remittance.paymentReceived}</TableCell>
+                    <TableCell className="text-right">
+                      ₦{remittance.orders[0].serviceCost}
+                    </TableCell>
+                    <TableCell className="text-right">₦{remittance.totalCost}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {remittance.remittanceDue}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {daysLeft >= 0 ? `${daysLeft} day(s) left` : 'Expired'}
+                    </TableCell>
+                    <TableCell>
+                      {/* @ts-ignore */}
+                      <Badge variant={remittance.status === 'PAID' ? 'success' : 'secondary'}>
+                        {remittance.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {remittance.status.toLowerCase() === 'pending' && (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setSelectedRemittance(remittance)
+                            setOpenModal(true)
+                          }}
+                        >
+                          Mark Paid
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* Mark Paid Modal */}
+      <Dialog open={openModal} onOpenChange={setOpenModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark Remittance as Paid</DialogTitle>
+          </DialogHeader>
+          <p className="my-4">
+            Are you sure you want to mark the remittance for{' '}
+            <strong>{selectedRemittance?.clientName || selectedRemittance?.vendorName}</strong> as
+            paid? This will record a payment of {selectedRemittance?.remittanceDue}.
+          </p>
+          <DialogFooter className="flex justify-end space-x-2">
+            <Button variant="outline" onClick={() => setOpenModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={markAsPaid}>Confirm</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Remittance Modal */}
+      <Dialog open={openCreateModal} onOpenChange={setOpenCreateModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create New Remittance</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col space-y-4">
+            {/* Select Client */}
+            <div className="flex flex-col space-y-1">
+              <label className="text-sm font-medium">Select Client</label>
+              <Select
+                value={newRemittance.clientId}
+                onValueChange={(val) => setNewRemittance({ ...newRemittance, clientId: val })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="-- Select Client --" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Period Start / End */}
+            <div className="flex gap-2">
+              <div className="flex flex-col space-y-1 w-full">
+                <label className="text-sm font-medium">Period Start</label>
+                <Input
+                  type="date"
+                  value={newRemittance.periodStart}
+                  onChange={(e) =>
+                    setNewRemittance({ ...newRemittance, periodStart: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="flex flex-col space-y-1 w-full">
+                <label className="text-sm font-medium">Period End</label>
+                <Input
+                  type="date"
+                  value={newRemittance.periodEnd}
+                  onChange={(e) =>
+                    setNewRemittance({ ...newRemittance, periodEnd: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            {/* Select Orders */}
+            <div className="flex flex-col space-y-1">
+              <label className="text-sm font-medium">Select Orders</label>
+
+              {/* ShadCN does NOT have <Select multiple> so use native or custom */}
+              <select
+                multiple
+                className="w-full border rounded-md p-2 h-32 bg-background"
+                value={newRemittance.selectedOrders.map((o) => o.orderId)}
+                onChange={(e) => {
+                  const selectedOptions = Array.from(e.target.selectedOptions).map((o) => {
+                    const order = orders.find((ord) => ord.id === o.value)
+                    return { orderId: order.id, expectedAmount: order.cost }
+                  })
+                  setNewRemittance({
+                    ...newRemittance,
+                    selectedOrders: selectedOptions
+                  })
+                }}
+              >
+                {orders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.id} - ${o.cost}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <DialogFooter className="flex justify-end space-x-2 mt-4">
+            <Button variant="outline" onClick={() => setOpenCreateModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={createRemittance}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
-  );
+  )
 }

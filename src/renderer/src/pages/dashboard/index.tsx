@@ -2,13 +2,31 @@ import MetricCard from '@renderer/components/metric-card'
 import { Package, Truck, Users, Warehouse } from 'lucide-react'
 
 import { ShipmentsAnalytics } from '@renderer/components/dashboard/ShipmentsAnalytics'
-import { TrackingHistory } from '@renderer/components/dashboard/TrackingHistory'
+// import { TrackingHistory } from '@renderer/components/dashboard/TrackingHistory'
 import { TrafficByLocation } from '@renderer/components/dashboard/TrafficByLocation'
-import { ShipmentsTable } from '@renderer/components/table'
+
 import { RecentAgentsTable } from '@renderer/components/dashboard/ReccentAgentsTable'
 import { RecentWarehousesTable } from '@renderer/components/dashboard/RecentWarehouseTable'
+import { useEffect, useState } from 'react'
+import { toast } from 'react-toastify'
 
 export default function Dashboard() {
+  const [metrics, setMetrics]=  useState<any>()
+      const loadClients = async () => {
+        try {
+          const list = await window.api.getDashboardMetrics()
+          console.log(list);
+          
+          setMetrics(list.data)
+        } catch (err) {
+          console.error(err)
+          toast.error('Failed to load clients.')
+        }
+  }
+  
+  useEffect(() => {
+    loadClients()
+  },[])
   return (
     <div className="space-y-10">
       {/* Header */}
@@ -24,7 +42,7 @@ export default function Dashboard() {
         <MetricCard
           icon={<Package size={20} />}
           title="Total Shipments"
-          value="1,284"
+          value={metrics?.totalShipments}
           trend="2.9%"
           trendType="up"
           subtitle="this week"
@@ -32,7 +50,7 @@ export default function Dashboard() {
         <MetricCard
           icon={<Truck size={20} />}
           title="Deliveries in Progress"
-          value="875"
+          value={metrics?.deliveriesInProgress}
           trend="4.2%"
           trendType="up"
           subtitle="live tracking"
@@ -40,7 +58,7 @@ export default function Dashboard() {
         <MetricCard
           icon={<Users size={20} />}
           title="Active Agents"
-          value="42"
+          value={metrics?.activeAgents}
           trend="1.1%"
           trendType="up"
           subtitle="working today"
@@ -48,7 +66,7 @@ export default function Dashboard() {
         <MetricCard
           icon={<Warehouse size={20} />}
           title="Warehouses"
-          value="12"
+          value={metrics?.warehouses}
           trend="Stable"
           trendType="up"
           subtitle="across regions"
@@ -58,7 +76,8 @@ export default function Dashboard() {
       {/* Analytics Section (keep as is) */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <ShipmentsAnalytics />
-        <TrackingHistory />
+        <TrafficByLocation />
+        {/* <TrackingHistory /> */}
       </div>
 
       {/* ✅ Add Another Table Here (Recent Agents + Warehouses) */}
@@ -69,9 +88,8 @@ export default function Dashboard() {
 
       {/* Our existing traffic + shipments table */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <TrafficByLocation />
         <div className="xl:col-span-2">
-          <ShipmentsTable />
+          {/* <ShipmentsTa ble /> */}
         </div>
       </div>
     </div>

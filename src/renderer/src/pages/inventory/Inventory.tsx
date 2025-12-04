@@ -29,7 +29,12 @@ export default function Inventory() {
   const [clients, setClients] = useState<Vendor[]>([])
   const [warehouses, setWarehouses] = useState([])
 const [products, setProducts] = useState([])
-const [inventories, setInventories] = useState<Inventorys[]>([])
+  const [inventories, setInventories] = useState<Inventorys[]>([])
+  const [stats, setStats] = useState<{
+    totalItemsInStock: any
+    lowStockItems: number
+    threshold: number
+  }>({lowStockItems:0, threshold:0, totalItemsInStock:0})
 
     /**
      * Load Vendors
@@ -83,7 +88,8 @@ const getStatusConfig = (quantity: number) => {
         const list = await window.api.listInventory()
     
         
-        setInventories(list.data)
+        setInventories(list.data.items)
+        setStats(list.data.stats)
       } catch (err) {
         console.error(err)
         toast.error('Failed to load inventories')
@@ -97,6 +103,8 @@ const getStatusConfig = (quantity: number) => {
       loadProducts()
       loadInventories()
     }, [])
+
+  
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -106,16 +114,24 @@ const getStatusConfig = (quantity: number) => {
         </div>
         <InventoryAddModal
           vendors={clients}
-          onSuccess={() => {}}
+          onSuccess={() => {
+            loadInventories()
+            loadWarehouses()
+          }}
           warehouses={warehouses}
           products={products}
         />
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard title="Total Items" value="1,456" icon={Package} />
-        <MetricCard title="Low Stock Items" value="23" icon={AlertTriangle} variant="warning" />
-        <MetricCard title="Warehouses" value="3" icon={Package} variant="success" />
+        <MetricCard title="Total Items" value={stats?.totalItemsInStock} icon={Package} />
+        <MetricCard
+          title="Low Stock Items"
+          value={stats?.lowStockItems}
+          icon={AlertTriangle}
+          variant="warning"
+        />
+        <MetricCard title="Warehouses" value={warehouses.length} icon={Package} variant="success" />
       </div>
 
       <Card>

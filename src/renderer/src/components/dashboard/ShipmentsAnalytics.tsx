@@ -1,4 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import { useEffect, useState } from 'react'
+import { toast } from 'react-toastify'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
 const chartData = [
@@ -17,6 +19,25 @@ const chartData = [
 ]
 
 export function ShipmentsAnalytics() {
+
+      const [analytics, setAnalytics] = useState<any>()
+      const loadClients = async () => {
+        try {
+          const list = await window.api.getDashboardShipmentAnalytics()
+          console.log(list)
+
+          setAnalytics(list.chartData)
+        } catch (err) {
+          console.error(err)
+          toast.error('Failed to load clients.')
+        }
+      }
+
+      useEffect(() => {
+        loadClients()
+      }, [])
+
+  
   return (
     <Card className="col-span-2">
       <CardHeader>
@@ -24,7 +45,7 @@ export function ShipmentsAnalytics() {
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={chartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+          <BarChart data={analytics} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
             <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} />
             <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
             <Tooltip

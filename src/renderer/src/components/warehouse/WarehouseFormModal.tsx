@@ -56,6 +56,9 @@ export function WarehouseFormModal({
             <Input
               placeholder="Example: 50,000 sq ft"
               value={form.capacity}
+              type='number'
+
+
               onChange={(e) => setForm({ ...form, capacity: e.target.value })}
             />
           </div>

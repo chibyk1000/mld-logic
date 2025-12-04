@@ -55,6 +55,7 @@ const api = {
   // CLIENTS (FINAL CUSTOMERS)
   // -----------------------------
   listClients: () => ipcRenderer.invoke('clients:list'),
+  getClientStats: () => ipcRenderer.invoke('clients:stats'),
 
   createClient: (data: { fullName: string; phone: string; email?: string; address?: string }) =>
     ipcRenderer.invoke('clients:create', data),
@@ -69,6 +70,8 @@ const api = {
   // VENDORS
   // -----------------------------
   listVendors: () => ipcRenderer.invoke('vendors:list'),
+  // -----------------------------
+  getVendorStats: () => ipcRenderer.invoke('stats:vendor-performance'),
 
   createVendor: (data: {
     companyName: string
@@ -142,7 +145,7 @@ const api = {
     warehouseId: string
     cost: number
   }) => ipcRenderer.invoke('orders:create', data),
-  createClientDeliveryOrder: (data:any) => ipcRenderer.invoke('orders:client_create', data),
+  createClientDeliveryOrder: (data: any) => ipcRenderer.invoke('orders:client_create', data),
 
   updateDeliveryOrder: (id: string, data: any) => ipcRenderer.invoke('orders:update', { id, data }),
 
@@ -154,7 +157,48 @@ const api = {
 
   deleteDeliveryOrder: (id: string) => ipcRenderer.invoke('orders:delete', { id }),
 
-  getDeliveryOrder: (id: string) => ipcRenderer.invoke('orders:get', { id })
+  getDeliveryOrder: (id: string) => ipcRenderer.invoke('orders:get', { id }),
+  // -----------------------------
+  // REMITTANCES
+  // -----------------------------
+  listRemittances: () => ipcRenderer.invoke('remittances:list'),
+
+  createRemittance: (payload: {
+    clientId: string
+    periodStart: string
+    periodEnd: string
+    orders: { orderId: string; expectedAmount: number }[]
+  }) => ipcRenderer.invoke('remittances:create', payload),
+
+  addRemittancePayment: (payload: {
+    remittanceId: string
+    amount: number
+    method?: string
+    reference?: string
+    notes?: string
+  }) => ipcRenderer.invoke('remittances:add_payment', payload),
+
+  getRemittance: (id: string) => ipcRenderer.invoke('remittances:get', { id }),
+  // -----------------------------
+  // ACCOUNTING
+  // -----------------------------
+  getIncomeRecords: (period?: 'daily' | 'weekly' | 'monthly') =>
+    ipcRenderer.invoke('accounting:income', period),
+
+  getExpenseRecords: (period?: 'daily' | 'weekly' | 'monthly') =>
+    ipcRenderer.invoke('accounting:expenses', period),
+
+  getAccountingSummary: (period?: 'daily' | 'weekly' | 'monthly') =>
+    ipcRenderer.invoke('accounting:summary', period),
+  createExpense: (data: { type: string; description?: string | undefined; amount: number }) =>
+    ipcRenderer.invoke('accounting:createExpense', data),
+
+  // Dashboard
+
+  getDashboardMetrics: () => ipcRenderer.invoke('dashboard:metrics'),
+  getDashboardShipmentAnalytics: () => ipcRenderer.invoke('dashboard:shipmentsAnalytics'),
+  getDashboardOrdersByLocation: () => ipcRenderer.invoke('dashboard:ordersByLocation'),
+  getDashboardRecentEntities: () => ipcRenderer.invoke('dashboard:recentEntities')
 }
 
 

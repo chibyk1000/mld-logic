@@ -1,10 +1,12 @@
 import * as React from 'react'
 import {
   Calculator,
+  Cog,
   DollarSign,
   Group,
   LayoutDashboard,
   Package,
+  PackageOpen,
   StoreIcon,
   Users,
   UserSquare
@@ -165,10 +167,12 @@ const data = {
       icon: Group
     },
     { title: 'Inventory', url: '/inventory', icon: Package },
+    { title: 'Orders', url: '/orders', icon: PackageOpen },
     { title: 'Remittance', url: '/remittance', icon: DollarSign },
     { title: 'VIP Clients', url: '/vip-clients', icon: Users },
     { title: 'Regular Clients', url: '/regular-clients', icon: UserSquare },
-    { title: 'Accounting', url: '/accounting', icon: Calculator }
+    { title: 'Accounting', url: '/accounting', icon: Calculator },
+    { title: 'Settings', url: '/settings', icon: Cog }
   ]
 }
 

@@ -215,10 +215,10 @@ export default function RegularClients() {
                 <Plus className="mr-2 h-4 w-4" />
                 New Order Request
               </Button>
-            </DialogTrigger>
+            </DialogTrigger> 
             <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>Create Service Request</DialogTitle>
+                <DialogTitle>Create Order Request</DialogTitle>
               </DialogHeader>
               <OrderForm
                 onClose={() => setIsOrderDialogOpen(false)}

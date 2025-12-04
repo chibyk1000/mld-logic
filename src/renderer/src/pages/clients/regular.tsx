@@ -213,7 +213,7 @@ export default function RegularClients() {
             <DialogTrigger asChild>
               <Button>
                 <Plus className="mr-2 h-4 w-4" />
-                New Request
+                New Order Request
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl">
@@ -246,16 +246,15 @@ export default function RegularClients() {
                       toast.error(res.error)
                       return
                     }
-
                     toast.success('Order created ✔️')
                     setIsOrderDialogOpen(false)
                     await loadClients()
                     return
-                  } catch {
+                  } catch {      
                     toast.error('Failed to create order')
                     return
                   }
-                }}
+                }}   
                 clientType="regular"
               />
             </DialogContent>

@@ -7,7 +7,7 @@ import { Badge } from '@renderer/components/ui/badge'
 import { useForm } from 'react-hook-form'
 import { yupResolver } from '@hookform/resolvers/yup'
 import * as yup from 'yup'
-import { Plus, MapPin, Package, CheckCircle, Trash2, FileEdit, Eye } from 'lucide-react'
+import { Plus, MapPin, Package, CheckCircle, Trash2, FileEdit, Eye,  } from 'lucide-react'
 import {
   Table,
   TableBody,
@@ -29,26 +29,10 @@ import { Label } from '@renderer/components/ui/label'
 import { Textarea } from '@renderer/components/ui/textarea'
 import { toast } from 'react-toastify'
 import EditWarehouseModal from './editwarehousemodal'
-const initialWarehouses = [
-  {
-    id: 'WH-001',
-    name: 'Central Hub',
-    location: 'New York, NY',
-    capacity: '85%',
-    items: 4250,
-    status: 'active',
-    agents: ['John Doe', 'Jane Smith']
-  },
-  {
-    id: 'WH-002',
-    name: 'West Coast Depot',
-    location: 'Los Angeles, CA',
-    capacity: '62%',
-    items: 2890,
-    status: 'active',
-    agents: ['Mike Brown']
-  }
-]
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/components/ui/select'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@renderer/components/ui/command'
+import { Checkbox } from '@renderer/components/ui/checkbox'
+
 
 // ------------------- Yup schema -------------------
 const warehouseSchema = yup.object({
@@ -63,72 +47,133 @@ const warehouseSchema = yup.object({
 
 type WarehouseFormValues = yup.InferType<typeof warehouseSchema>
 export default function WarehouseList() {
-  const [warehouses, setWarehouses] = useState(initialWarehouses)
+  const [warehouses, setWarehouses] = useState<any[]>([])
 
   const [openView, setOpenView] = useState(false)
   const [selectedWarehouse, setSelectedWarehouse] = useState<any>(null)
   const [openAdd, setOpenAdd] = useState(false)
   const [openEdit, setOpenEdit] = useState(false)
 
-    const {
-      register,
-      handleSubmit,
-      reset,
-      formState: { errors }
-    } = useForm<WarehouseFormValues>({
-      resolver: yupResolver(warehouseSchema)
-    })
-  
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors }
+  } = useForm<WarehouseFormValues>({
+    resolver: yupResolver(warehouseSchema)
+  })
 
-  
-const handleAddWarehouse = async (data: WarehouseFormValues) => {
-  try {
-    // Call the Electron IPC handler
+  // Inside your WarehouseList component
+  const [openTransfer, setOpenTransfer] = useState(false)
+  const [transferProducts, setTransferProducts] = useState<any[]>([])
+  const [selectedProducts, setSelectedProducts] = useState<any[]>([])
 
-    const result = await window.api.createWarehouse(data as any)
+  const [selectedSourceWarehouse, setSelectedSourceWarehouse] = useState<string | null>(null)
+  const [selectedDestinationWarehouse, setSelectedDestinationWarehouse] = useState<string | null>(
+    null
+  )
+ 
+  const [transferNote, setTransferNote] = useState('')
 
-    if (result.error) {
-      // Handle error from main process
-      toast.error(result.error)
-      console.log(result.error)
+  // Fetch products from the selected source warehouse
+  useEffect(() => {
+    const fetchProducts = async () => {
+
+      if (!selectedSourceWarehouse) return
+      try {
+        const result = await window.api.listWarehouseProducts(selectedSourceWarehouse)
+       
+        
+        setTransferProducts(result.data)
+      } catch (err) {
+        console.error('Failed to fetch products:', err)
+      }
+    }
+
+    fetchProducts()
+  }, [selectedSourceWarehouse])
+
+  const handleStockTransfer = async () => {
+    console.log(selectedSourceWarehouse, selectedDestinationWarehouse, selectedProducts)
+    
+    if (!selectedSourceWarehouse || !selectedDestinationWarehouse || selectedProducts.length <= 0) {
+      toast.error('Please fill all fields with valid values.')
       return
-    }  
+    }
 
-    toast.success("warehouse added")
+    try {
+      const result = await window.api.transferStock({
+        fromWarehouseId: selectedSourceWarehouse,
+        toWarehouseId: selectedDestinationWarehouse,
+        products: selectedProducts,
+        note: transferNote
+      })
 
-  const d = await window.api.listWarehouses()
-  setWarehouses(d.data)
-  setOpenAdd(false)
-  reset()
-  } catch (err) {
-    console.error('Failed to add warehouse:', err)
+      if (result.error) {
+        toast.error(result.error)
+        return
+      }
+
+      toast.success('Stock transfer successful!')
+      setOpenTransfer(false)
+      setSelectedSourceWarehouse(null)
+      setSelectedDestinationWarehouse(null)
+    
+      setTransferNote('')
+    } catch (err) {
+      console.error('Failed to transfer stock:', err)
+      toast.error('Stock transfer failed')
+    }
   }
-}
-  
-const handleSubmitEdit = async (data: any) => {
-  try {
-    // Call the Electron IPC handler
 
-    const result = await window.api.updateWarehouse(selectedWarehouse.id, data)
+  const handleAddWarehouse = async (data: WarehouseFormValues) => {
+    try {
+      // Call the Electron IPC handler
 
-    if (result.error) {
-      // Handle error from main process
-      toast.error(result.error)
-      console.log(result.error)
-      return
-    }  
+      const result = await window.api.createWarehouse(data as any)
 
-    toast.success("warehouse updated")
+      if (result.error) {
+        // Handle error from main process
+        toast.error(result.error)
+        console.log(result.error)
+        return
+      }
 
-  const d = await window.api.listWarehouses()
-  setWarehouses(d.data)
-  setOpenAdd(false)
-  reset()
-  } catch (err) {
-    console.error('Failed to add warehouse:', err)
+      toast.success('warehouse added')
+
+      const d = await window.api.listWarehouses()
+      setWarehouses(d.data)
+      setOpenAdd(false)
+      reset()
+    } catch (err) {
+      console.error('Failed to add warehouse:', err)
+    }
   }
-}
 
+  const handleSubmitEdit = async (data: any) => {
+    try {
+      // Call the Electron IPC handler
+
+      const result = await window.api.updateWarehouse(selectedWarehouse.id, data)
+
+
+      if (result.error) {
+        // Handle error from main process
+        toast.error(result.error)
+        console.log(result.error)
+        return
+      }
+
+      toast.success('warehouse updated')
+
+      const d = await window.api.listWarehouses()
+      setWarehouses(d.data)
+      setOpenAdd(false)
+      reset()
+    } catch (err) {
+      console.error('Failed to add warehouse:', err)
+    }
+  }
 
   const handleEdit = (warehouse: any) => {
     setSelectedWarehouse(warehouse)
@@ -136,55 +181,56 @@ const handleSubmitEdit = async (data: any) => {
   }
 
   const handleDelete = async (id: string) => {
-  try {
-    // Call the Electron IPC handler
+    try {
+      // Call the Electron IPC handler
 
-    const result = await window.api.deleteWarehouse(id)
+      const result = await window.api.deleteWarehouse(id)
 
-    if (result.error) {
-      // Handle error from main process
-      toast.error(result.error)
-      console.log(result.error)
-      return
-    }
-
-    toast.success('warehouse updated')
-
-    const d = await window.api.listWarehouses()
-    setWarehouses(d.data)
-    setOpenAdd(false)
-    reset()
-  } catch (err) {
-    console.error('Failed to add warehouse:', err)
-  }
-  }
-
-    useEffect(() => {
-      const fetchWarehouses = async () => {
-        try {
-          const data = await window.api.listWarehouses()
-          setWarehouses(data.data)
-        } catch (err) {
-          console.error('Failed to fetch warehouses:', err)
-        }
+      if (result.error) {
+        // Handle error from main process
+        toast.error(result.error)
+        console.log(result.error)
+        return
       }
 
-      fetchWarehouses()
-    }, [])
+      toast.success('warehouse updated')
+
+      const d = await window.api.listWarehouses()
+      setWarehouses(d.data)
+      setOpenAdd(false)
+      reset()
+    } catch (err) {
+      console.error('Failed to add warehouse:', err)
+    }
+  }
+
+  useEffect(() => {
+    const fetchWarehouses = async () => {
+      try {
+        const data = await window.api.listWarehouses()
+        // console.log(data)
+        setWarehouses(data.data)
+      } catch (err) {
+        console.error('Failed to fetch warehouses:', err)
+      }
+    }
+
+    fetchWarehouses()
+  }, [])
   const handleView = (warehouse: any) => {
     setSelectedWarehouse(warehouse)
     setOpenView(true)
   }
-const avgUtilization =
-  warehouses.length > 0
-    ? (warehouses.reduce((sum, w) => {
-        const utilization = w.items / Number(w.capacity) // percentage for this warehouse
-        return sum + utilization
-      }, 0) /
-        warehouses.length) *
-      100
-    : 0
-
+  const avgUtilization =
+    warehouses.length > 0
+      ? (warehouses.reduce((sum, w) => {
+          const utilization = w.items / Number(w.capacity) // percentage for this warehouse
+          return sum + utilization
+        }, 0) /
+          warehouses.length) *
+        100
+      : 0
+console.log("tran",transferProducts, selectedSourceWarehouse);
 
   return (
     <div className="space-y-6">
@@ -194,13 +240,23 @@ const avgUtilization =
           <h2 className="text-3xl font-bold tracking-tight">Warehouses</h2>
           <p className="text-muted-foreground">Manage your warehouse facilities and inventory</p>
         </div>
-        <Button
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-          onClick={() => setOpenAdd(true)}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Add Warehouse
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={() => setOpenAdd(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Warehouse
+          </Button>
+
+          <Button
+            className="bg-secondary text-secondary-foreground hover:bg-secondary/90"
+            onClick={() => setOpenTransfer(true)}
+          >
+            <Package className="mr-2 h-4 w-4" />
+            Stock Transfer
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -249,7 +305,7 @@ const avgUtilization =
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{avgUtilization }%</div>
+            <div className="text-2xl font-bold">{avgUtilization}%</div>
           </CardContent>
         </Card>
       </div>
@@ -344,7 +400,7 @@ const avgUtilization =
 
             <div className="space-y-1">
               <Label>Capacity</Label>
-              <Input placeholder="Example: 8500" {...register('capacity')} type='number'/>
+              <Input placeholder="Example: 8500" {...register('capacity')} type="number" />
               {errors.capacity && <p className="text-red-500 text-sm">{errors.capacity.message}</p>}
             </div>
 
@@ -435,6 +491,146 @@ const avgUtilization =
             <Button className="mt-4 w-full" onClick={() => setOpenView(false)}>
               Close
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stock Transfer Modal */}
+      <Dialog open={openTransfer} onOpenChange={setOpenTransfer}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Stock Transfer</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-4">
+            {/* Source Warehouse */}
+            <div className="space-y-1">
+              <Label>Source Warehouse</Label>
+              <Select
+                value={selectedSourceWarehouse || ''}
+                onValueChange={(value) => setSelectedSourceWarehouse(value)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select source warehouse" />
+                </SelectTrigger>
+                <SelectContent>
+                  {warehouses.map((wh) => (
+                    <SelectItem key={wh.id} value={wh.id}>
+                      {wh.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Destination Warehouse */}
+            <div className="space-y-1">
+              <Label>Destination Warehouse</Label>
+              <Select
+                value={selectedDestinationWarehouse || ''}
+                onValueChange={(value) => setSelectedDestinationWarehouse(value)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select destination warehouse" />
+                </SelectTrigger>
+                <SelectContent>
+                  {warehouses
+                    .filter((wh) => wh.id !== selectedSourceWarehouse)
+                    .map((wh) => (
+                      <SelectItem key={wh.id} value={wh.id}>
+                        {wh.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Note */}
+            <div className="space-y-1">
+              <Label>Note (Optional)</Label>
+              <Textarea
+                value={transferNote}
+                onChange={(e) => setTransferNote(e.target.value)}
+                rows={3}
+                placeholder="Optional note about this transfer"
+              />
+            </div>
+
+            {/* Product Selection */}
+            <div className="space-y-2">
+              <Label>Select Products to Transfer</Label>
+
+              <Command className="border rounded-lg">
+                <CommandInput placeholder="Search products..." />
+                <CommandList>
+                  {transferProducts.length === 0 && <CommandEmpty>No products found.</CommandEmpty>}
+
+                  <CommandGroup>
+                    {transferProducts.map((product) => {
+                      const selected = selectedProducts.find((p) => p.id === product.productId)
+
+                      return (
+                        <CommandItem
+                          key={product.id}
+                          onSelect={() => {
+                            setSelectedProducts((prev) => {
+                              if (selected) {
+                                // Unselect product
+                                return prev.filter((p) => p.id !== product.id)
+                              }
+                              // Select product with default quantity 1
+                              return [...prev, { id: product.productId, quantity: 1 }]
+                            })
+                          }}
+                          className="flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={selected ? true : false}
+                              className={`h-4 w-4 [state=checked]:bg-white!  `}
+                            />
+                            <span>{product?.productName}</span>
+                          </div>
+                          <span className="text-sm text-muted-foreground">
+                            Available: {product.quantity}
+                          </span>
+                        </CommandItem>
+                      )
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+
+              {/* Quantity inputs for selected products */}
+              {selectedProducts.map((p) => {
+                const product = transferProducts.find((prod) => prod.productId === p.id)!
+                return (
+                  <div key={p.id} className="grid items-center gap-1">
+                    <span className="flex-1">Quantity of {product.productName} you want to transfer</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={product.quantity}
+                      value={p.quantity}
+                      onChange={(e) => {
+                        const qty = Number(e.target.value)
+                        setSelectedProducts((prev) =>
+                          prev.map((item) => (item.id === p.id ? { ...item, quantity: qty } : item))
+                        )
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <DialogFooter className="mt-4 flex justify-between">
+            <Button variant="outline" onClick={() => setOpenTransfer(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleStockTransfer}>Transfer Stock</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

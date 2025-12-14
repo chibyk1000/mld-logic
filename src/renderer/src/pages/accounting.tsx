@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
+import dayjs from 'dayjs'
 
 
 export default function Accounting() {
@@ -37,8 +38,8 @@ const [summary, setSummary] = useState<any>(null)
       const expenses = await window.api.getExpenseRecords(period)
       const summary = await window.api.getAccountingSummary(period)
       setSummary(summary.data)
-      console.log(expenses);
-      
+   
+   
     
       setIncomeRecords(incomes.data || [])
       setExpenseRecords(expenses || [])
@@ -47,18 +48,20 @@ const [summary, setSummary] = useState<any>(null)
     }
   }
 
-  console.log(summary);
+
+
   
   useEffect(() => {
     fetchData()
   }, [period])
 
-  const totalIncome = incomeRecords.reduce((sum, record) => sum + record.amount, 0)
+  const totalIncome = incomeRecords.reduce((sum, record) => sum + record.paymentReceived, 0)
+  const totalCharges = incomeRecords.reduce((sum, record) => sum + record.amountCharged, 0)
   const totalExpenses = expenseRecords.reduce((sum, record) => sum + record.amount, 0)
-  const profit = totalIncome - totalExpenses
+  const profit = totalCharges - totalExpenses
   const totalRemittancePending = incomeRecords
-    .filter((record) => record.remittanceDue)
-    .reduce((sum, record) => sum + (record.remittanceDue || 0), 0)
+    .filter((record) => record.outstanding)
+    .reduce((sum, record) => sum + (Math.abs(record.outstanding) || 0), 0)
 
   return (
     <div className="space-y-6">
@@ -70,9 +73,12 @@ const [summary, setSummary] = useState<any>(null)
           </p>
         </div>
         <div className="flex gap-2">
-          <Select value={period} onValueChange={(value) => {
-            setPeriod(value as any)
-          }}>
+          <Select
+            value={period}
+            onValueChange={(value) => {
+              setPeriod(value as any)
+            }}
+          >
             <SelectTrigger className="w-[140px]">
               <SelectValue />
             </SelectTrigger>
@@ -136,35 +142,37 @@ const [summary, setSummary] = useState<any>(null)
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Order ID</TableHead>
+                    {/* <TableHead>Order ID</TableHead> */}
                     <TableHead>Client</TableHead>
                     <TableHead>Category</TableHead>
+
                     <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="text-right">Payment Received</TableHead>
-                    <TableHead className="text-right">Service Cost</TableHead>
-                    <TableHead className="text-right">Remittance Due</TableHead>
+                    <TableHead className="text-right">Service Charge</TableHead>
+                    <TableHead className="text-center">Outstanding Payment</TableHead>
                     <TableHead>Date</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {incomeRecords.map((record) => (
                     <TableRow key={record.id}>
-                      <TableCell className="font-medium">{record.orderId}</TableCell>
-                      <TableCell>{record.client}</TableCell>
+                      {/* <TableCell className="font-medium">{record.orderId}</TableCell> */}
+                      <TableCell>{record.client || record.vendor}</TableCell>
                       <TableCell>
                         <Badge variant={record.category.includes('VIP') ? 'default' : 'secondary'}>
                           {record.category}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-medium">₦{record.amount}</TableCell>
+
                       <TableCell className="text-right">
                         {record.paymentReceived ? `₦${record.paymentReceived}` : '-'}
                       </TableCell>
-                      <TableCell className="text-right">₦{record.serviceCost}</TableCell>
-                      <TableCell className="text-right">
-                        {record.remittanceDue ? `₦${record.remittanceDue}` : '-'}
+                      <TableCell className="text-center">₦{record.amountCharged}</TableCell>
+                      <TableCell className="text-center">
+                        {record.vendor && (
+                          <>{record.outstanding ? `₦${record.outstanding}` : '-'}</>
+                        )}
                       </TableCell>
-                      <TableCell>{record.date}</TableCell>
+                      <TableCell>{dayjs(record.date).format('YYYY MMMM, DD')}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -200,7 +208,7 @@ const [summary, setSummary] = useState<any>(null)
                       </TableCell>
                       <TableCell>{record.description}</TableCell>
                       <TableCell className="text-right font-medium">₦{record.amount}</TableCell>
-                      <TableCell>{record.date}</TableCell>
+                      <TableCell>{dayjs(record.date).format('YYYY MMMM, DD')}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -221,19 +229,20 @@ const [summary, setSummary] = useState<any>(null)
                   <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
                     <span className="text-muted-foreground">VIP Clients</span>
                     <span className="font-bold text-foreground">
-                      ₦{summary.incomeBreakdown.vip.toLocaleString()}
+                      ₦{summary.incomeBreakdown.vip.received.toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
                     <span className="text-muted-foreground">Regular Clients</span>
                     <span className="font-bold text-foreground">
-                      ₦{summary.incomeBreakdown.regular.toLocaleString()}
+                      ₦{summary.incomeBreakdown.regular.received.toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-primary/10 rounded-lg">
                     <span className="font-medium text-foreground">Total Income</span>
                     <span className="font-bold text-success">
-                      ₦{summary.incomeBreakdown.total.toLocaleString()}
+                      ₦{summary?.incomeBreakdown?.totals.received
+.toLocaleString()}
                     </span>
                   </div>
                 </CardContent>
@@ -276,7 +285,7 @@ const [summary, setSummary] = useState<any>(null)
                       <div>
                         <p className="text-sm text-muted-foreground">Total Revenue</p>
                         <p className="text-2xl font-bold text-success">
-                          ₦{summary?.profitLoss.totalIncome.toLocaleString()}
+                          ₦{summary?.profitLoss.profit.toLocaleString()}
                         </p>
                       </div>
                       <TrendingUp className="h-8 w-8 text-success" />
@@ -302,7 +311,10 @@ const [summary, setSummary] = useState<any>(null)
                             summary?.profitLoss.profit >= 0 ? 'text-success' : 'text-destructive'
                           }`}
                         >
-                          ₦{Math.abs(summary?.profitLoss.profit).toLocaleString()}
+                          ₦
+                          {Math.abs(
+                            summary?.profitLoss.profit + summary?.profitLoss.outstanding
+                          ).toLocaleString()}
                         </p>
                       </div>
                       <DollarSign
@@ -320,9 +332,13 @@ const [summary, setSummary] = useState<any>(null)
       </Tabs>
 
       <IncomeRecordForm open={incomeFormOpen} onOpenChange={setIncomeFormOpen} />
-      <ExpenseRecordForm open={expenseFormOpen} onOpenChange={setExpenseFormOpen} onSuccess={() => {
-        fetchData()
-      }} />
+      <ExpenseRecordForm
+        open={expenseFormOpen}
+        onOpenChange={setExpenseFormOpen}
+        onSuccess={() => {
+          fetchData()
+        }}
+      />
     </div>
   )
 }

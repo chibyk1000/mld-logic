@@ -31,6 +31,7 @@ export default function Remittance() {
   const [openModal, setOpenModal] = useState(false)
   const [openCreateModal, setOpenCreateModal] = useState(false)
   const [selectedRemittance, setSelectedRemittance] = useState<any>(null)
+  const [summary, setSummary] = useState<any>(null)
   const [newRemittance, setNewRemittance] = useState({
     clientId: '',
     periodStart: dayjs().format('YYYY-MM-DD'),
@@ -38,10 +39,15 @@ export default function Remittance() {
     selectedOrders: [] as any[]
   })
 
+  
+
   const loadRemittance = async () => {
     try {
       const list = await window.api.listRemittances()
-      console.log(list);
+      
+         const summary = await window.api.getRemittanceMetrics()
+         setSummary(summary)
+    
       
       setRemittance(list.data)
     } catch (err) {
@@ -132,16 +138,16 @@ export default function Remittance() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard title="Total Pending" value="$12,450" icon={Clock} variant="warning" />
+        <MetricCard title="Total Pending" value={summary?.totalPending} icon={Clock} variant="warning" />
         <MetricCard
           title="Completed This Month"
-          value="$28,340"
+          value={summary?.completedThisMonth }
           icon={CheckCircle}
           variant="success"
         />
         <MetricCard
           title="Service Fees Earned"
-          value="$4,230"
+          value={summary?.serviceFees}
           icon={DollarSign}
           variant="destructive"
         />
@@ -160,33 +166,33 @@ export default function Remittance() {
                 <TableHead className="text-center">Orders</TableHead>
                 <TableHead className="text-right">Payment Received</TableHead>
                 <TableHead className="text-right">Service Cost</TableHead>
-                <TableHead className="text-right">Total Cost</TableHead>
+                {/* <TableHead className="text-right">Total Cost</TableHead> */}
                 <TableHead className="text-right">Remittance Due</TableHead>
-                <TableHead className="text-right">Days Left</TableHead>
+                
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {remittances.map((remittance) => {
-                const daysLeft = dayjs(remittance.periodEnd).diff(dayjs(), 'day')
+               
                 return (
                   <TableRow key={remittance.id}>
                     <TableCell className="font-medium">
                       {remittance.clientName || remittance.vendorName}
                     </TableCell>
                     <TableCell className="text-center">{remittance.orderCount}</TableCell>
-                    <TableCell className="text-right">{remittance.paymentReceived}</TableCell>
                     <TableCell className="text-right">
-                      ₦{remittance.orders[0].serviceCost}
+                      ₦{Number(remittance.totalReceived).toLocaleString()}
                     </TableCell>
-                    <TableCell className="text-right">₦{remittance.totalCost}</TableCell>
+                    <TableCell className="text-right">
+                      ₦{Number(remittance.totalCharged).toLocaleString()}
+                    </TableCell>
+                    {/* <TableCell className="text-right">₦{remittance.totalCost}</TableCell> */}
                     <TableCell className="text-right font-semibold">
-                      {remittance.remittanceDue}
+                      ₦{Number(remittance.amountLeft).toLocaleString()}
                     </TableCell>
-                    <TableCell className="text-right font-semibold">
-                      {daysLeft >= 0 ? `${daysLeft} day(s) left` : 'Expired'}
-                    </TableCell>
+
                     <TableCell>
                       {/* @ts-ignore */}
                       <Badge variant={remittance.status === 'PAID' ? 'success' : 'secondary'}>

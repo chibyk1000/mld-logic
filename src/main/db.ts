@@ -153,36 +153,25 @@ CREATE TABLE IF NOT EXISTS "DeliveryOrder" (
   id TEXT PRIMARY KEY NOT NULL,
 
   vendorId TEXT,
-  productId TEXT,
-  quantity INTEGER NOT NULL,
-
   clientId TEXT,
   agentId TEXT,
   warehouseId TEXT,
 
-  -- Existing
-  destination TEXT,
-  serviceCost REAL NOT NULL,
-  deliveryCost REAL NOT NULL,
-  
+  serviceCharge REAL NOT NULL DEFAULT 0,
+  amountReceived REAL NOT NULL DEFAULT 0,
 
-  -- New fields: PICKUP INFO
   pickupContactName TEXT,
   pickupContactPhone TEXT,
   pickupInstructions TEXT,
 
-  -- New fields: DELIVERY INFO
   deliveryContactName TEXT,
   deliveryContactPhone TEXT,
+  deliveryContactEmail TEXT,
   deliveryInstructions TEXT,
   deliveryAddress TEXT,
 
-  -- Payment fields
   collectPayment INTEGER NOT NULL DEFAULT 0,
-  additionalCost REAL DEFAULT 0,
-
-  -- enum Sensitivity (store as TEXT)
-  sensitivity TEXT NOT NULL DEFAULT 'MEDIUM',
+  additionalCharge REAL DEFAULT 0,
 
   status TEXT NOT NULL DEFAULT 'PENDING',
 
@@ -190,14 +179,26 @@ CREATE TABLE IF NOT EXISTS "DeliveryOrder" (
   updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   FOREIGN KEY (vendorId) REFERENCES "Vendor"(id) ON DELETE SET NULL ON UPDATE CASCADE,
-  FOREIGN KEY (productId) REFERENCES "Product"(id) ON DELETE SET NULL ON UPDATE CASCADE,
   FOREIGN KEY (clientId) REFERENCES "Client"(id) ON DELETE CASCADE ON UPDATE CASCADE,
   FOREIGN KEY (agentId) REFERENCES "Agent"(id) ON DELETE SET NULL ON UPDATE CASCADE,
   FOREIGN KEY (warehouseId) REFERENCES "Warehouse"(id) ON DELETE SET NULL ON UPDATE CASCADE
 )
-`
+  `
 ).run()
 
+// DeliveryOrderProduct pivot table
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS "DeliveryOrderProduct" (
+  id TEXT PRIMARY KEY NOT NULL,
+  orderId TEXT NOT NULL,
+  productId TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY (orderId) REFERENCES "DeliveryOrder"(id) ON DELETE CASCADE,
+  FOREIGN KEY (productId) REFERENCES "Product"(id) ON DELETE CASCADE
+)
+  `
+).run()
 
 // -------------------- REMITTANCE --------------------
 
@@ -207,42 +208,41 @@ db.prepare(
 CREATE TABLE IF NOT EXISTS "Remittance" (
   id TEXT PRIMARY KEY NOT NULL,
 
-  clientId TEXT,            -- client who paid
-  vendorId TEXT,            -- vendor who paid for delivery (optional)
-
-  -- FINANCIALS
-totalCost REAL NOT NULL DEFAULT 0,     -- total cost of service only
-amountLeft REAL NOT NULL DEFAULT 0,    -- remaining amount to be received
-   
+  vendorId TEXT,              -- vendor who paid for delivery (optional)
 
   status TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING, PARTIAL, PAID
 
   createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  FOREIGN KEY (clientId) REFERENCES "Client"(id) ON DELETE CASCADE ON UPDATE CASCADE,
-  FOREIGN KEY (vendorId) REFERENCES "Vendor"(id) ON DELETE CASCADE ON UPDATE CASCADE
+  FOREIGN KEY (vendorId) REFERENCES "Vendor"(id)
+      ON DELETE CASCADE ON UPDATE CASCADE
 )
 `
 ).run()
 
 
 // Pivot table: Remittance → DeliveryOrder
-db.prepare(`
+db.prepare(
+  `
 CREATE TABLE IF NOT EXISTS "RemittanceOrder" (
   id TEXT PRIMARY KEY NOT NULL,
 
   remittanceId TEXT NOT NULL,
   orderId TEXT NOT NULL,
-  expectedAmount REAL NOT NULL,
+
+  amountCharged REAL NOT NULL,
   receivedAmount REAL NOT NULL DEFAULT 0,
 
   createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  FOREIGN KEY (remittanceId) REFERENCES "Remittance"(id) ON DELETE CASCADE ON UPDATE CASCADE,
-  FOREIGN KEY (orderId) REFERENCES "DeliveryOrder"(id) ON DELETE CASCADE ON UPDATE CASCADE
+  FOREIGN KEY (remittanceId) REFERENCES "Remittance"(id)
+      ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (orderId) REFERENCES "DeliveryOrder"(id)
+      ON DELETE CASCADE ON UPDATE CASCADE
 )
-`).run()
+`
+).run()
 
 // Optional: Payment logs for each remittance
 db.prepare(
@@ -250,7 +250,9 @@ db.prepare(
 CREATE TABLE IF NOT EXISTS "RemittancePayment" (
   id TEXT PRIMARY KEY NOT NULL,
 
+  vendorId TEXT,
   remittanceId TEXT NOT NULL,
+
   amount REAL NOT NULL,
   method TEXT,
   reference TEXT,
@@ -258,11 +260,13 @@ CREATE TABLE IF NOT EXISTS "RemittancePayment" (
 
   createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  FOREIGN KEY (remittanceId) REFERENCES "Remittance"(id) ON DELETE CASCADE ON UPDATE CASCADE
+  FOREIGN KEY (remittanceId) REFERENCES "Remittance"(id)
+      ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (vendorId) REFERENCES "Vendor"(id)
+      ON DELETE CASCADE ON UPDATE CASCADE
 )
 `
-)
-  .run()
+).run()
 
 // Initialize Expense table on app start
 db.prepare(`
@@ -274,6 +278,22 @@ db.prepare(`
     createdAt TEXT DEFAULT (datetime('now'))
   )
 `).run();
+db.prepare(
+  `
+CREATE TABLE IF NOT EXISTS "StockTransferLog" (
+  id TEXT PRIMARY KEY NOT NULL,
+  productId TEXT NOT NULL,
+  fromWarehouseId TEXT NOT NULL,
+  toWarehouseId TEXT NOT NULL,
+  quantity INTEGER NOT NULL,
+  note TEXT,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (productId) REFERENCES "Product"(id),
+  FOREIGN KEY (fromWarehouseId) REFERENCES "Warehouse"(id),
+  FOREIGN KEY (toWarehouseId) REFERENCES "Warehouse"(id)
+)
+`
+).run()
 
 
 // -------------------- TRIGGERS --------------------
@@ -288,8 +308,12 @@ const tablesWithUpdatedAt = [
   'Product',
   'Inventory',
   'DeliveryOrder',
-  'Remittance', 'RemittanceOrder', 'RemittancePayment',
-  "Expense"
+  'Remittance',
+  'RemittanceOrder',
+  'RemittancePayment',
+  'Expense',
+  'StockTransferLog',
+   
 ]
 
 tablesWithUpdatedAt.forEach((table) => {

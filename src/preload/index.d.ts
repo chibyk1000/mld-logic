@@ -115,10 +115,13 @@ declare global {
         cost: number
       }) => Promise<any>
       createClientDeliveryOrder: (data: any) => Promise<any>
+      listWarehouseProducts: (id: string) => Promise<any>
       updateDeliveryOrder: (id: string, data: any) => Promise<any>
+      transferStock: (data: any) => Promise<any>
       assignAgent: (orderId: string, agentId: string) => Promise<any>
       updateDeliveryStatus: (orderId: string, status: string) => Promise<any>
       deleteDeliveryOrder: (id: string) => Promise<any>
+      getRemittanceMetrics: () => Promise<any>
       getDeliveryOrder: (id: string) => Promise<any>
       listRemittances: () => Promise<any>
       createRemittance: (payload: {

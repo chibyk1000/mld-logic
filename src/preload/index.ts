@@ -18,6 +18,9 @@ const api = {
   // WAREHOUSE
   // -----------------------------
   listWarehouses: () => ipcRenderer.invoke('warehouses:list'),
+listWarehouseProducts: (warehouseId: string) =>
+  ipcRenderer.invoke('warehouse:listProducts', warehouseId)
+,
 
   createWarehouse: (data: {
     name: string
@@ -91,6 +94,7 @@ const api = {
   addVendorToWarehouse: (vendorId: string, warehouseId: string) =>
     ipcRenderer.invoke('vendorWarehouse:add', { vendorId, warehouseId }),
 
+  transferStock: (data: any) => ipcRenderer.invoke('warehouse:transferStock', data),
   removeVendorFromWarehouse: (vendorId: string, warehouseId: string) =>
     ipcRenderer.invoke('vendorWarehouse:remove', { vendorId, warehouseId }),
 
@@ -179,6 +183,7 @@ const api = {
   }) => ipcRenderer.invoke('remittances:add_payment', payload),
 
   getRemittance: (id: string) => ipcRenderer.invoke('remittances:get', { id }),
+  getRemittanceMetrics: () => ipcRenderer.invoke('remittances:metrics'),
   // -----------------------------
   // ACCOUNTING
   // -----------------------------
@@ -200,7 +205,6 @@ const api = {
   getDashboardOrdersByLocation: () => ipcRenderer.invoke('dashboard:ordersByLocation'),
   getDashboardRecentEntities: () => ipcRenderer.invoke('dashboard:recentEntities')
 }
-
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise

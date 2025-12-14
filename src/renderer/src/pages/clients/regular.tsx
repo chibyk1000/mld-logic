@@ -26,14 +26,11 @@ import { toast } from 'react-toastify'
 import { ClientGetPayload, DeliveryOrderGetPayload } from 'generated/prisma/models'
 import { RegularClientEditForm } from '@renderer/components/ClientEditForm'
 
-
-
-
-
 export type Clients = ClientGetPayload<{
   include: {
-  deliveryOrders:true
-}}>
+    deliveryOrders: true
+  }
+}>
 type Orders = DeliveryOrderGetPayload<{
   include: {
     vendor: true
@@ -62,47 +59,43 @@ export default function RegularClients() {
     totalRevenue: 0,
     successRate: 0
   })
-    const [stats, setStats] = useState<{
-      weekly: {
-        period: string
-        requested: number
-        delivered: number
-        failed: number
-      }[]
-      monthly: {
-        period: string
-        requested: number
-        delivered: number
-        failed: number
-      }[]
-      
-    }>({
-      monthly: [],
-      weekly: [],
-   
-    })
+  const [stats, setStats] = useState<{
+    weekly: {
+      period: string
+      requested: number
+      delivered: number
+      failed: number
+    }[]
+    monthly: {
+      period: string
+      requested: number
+      delivered: number
+      failed: number
+    }[]
+  }>({
+    monthly: [],
+    weekly: []
+  })
 
-    const loadStats = async () => {
-      try {
-        const list = await window.api.getClientStats()
-        console.log(list)
-        if (list) {
-          
-          setStats(list.data)
-          setTotals(list.data .totals)
-        }
-        } catch (err) {
-          console.error(err)
-        toast.error('Failed to load products')
+  const loadStats = async () => {
+    try {
+      const list = await window.api.getClientStats()
+      console.log(list)
+      if (list) {
+        setStats(list.data)
+        setTotals(list.data.totals)
       }
-  } 
-  console.log(clients);
-  
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load products')
+    }
+  }
+  console.log(clients)
+
   const loadClients = async () => {
     try {
       const list = await window.api.listClients()
-  
-      
+
       setClients(list.data)
     } catch (err) {
       console.error(err)
@@ -112,8 +105,7 @@ export default function RegularClients() {
   const loadOrders = async () => {
     try {
       const list = await window.api.listDeliveryOrders()
-     
-      
+
       setOrders(list.data)
     } catch (err) {
       console.error(err)
@@ -121,7 +113,6 @@ export default function RegularClients() {
     }
   }
 
- 
   useEffect(() => {
     loadClients()
     loadStats()
@@ -131,8 +122,7 @@ export default function RegularClients() {
   const handleEditClient = async (data: any) => {
     if (!selectedClient) return
     try {
- 
-      const { deliveryOrders, ...rest } =  data
+      const { deliveryOrders, ...rest } = data
       const res = await window.api.updateClient(selectedClient.id, rest)
       if (res.error) {
         toast.error(res.error)
@@ -143,13 +133,12 @@ export default function RegularClients() {
       setSelectedClient(null)
       loadClients()
     } catch (err) {
-      console.log(err);
-      
+      console.log(err)
+
       toast.error('Failed to update client')
     }
   }
 
-  
   // Delete client
   const handleDeleteClient = async (id: string) => {
     if (!confirm('Are you sure you want to delete this client?')) return
@@ -170,7 +159,6 @@ export default function RegularClients() {
 
   const filteredOrders = orders.filter((order) => order.client !== null)
 
-  
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -215,7 +203,7 @@ export default function RegularClients() {
                 <Plus className="mr-2 h-4 w-4" />
                 New Order Request
               </Button>
-            </DialogTrigger> 
+            </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>Create Order Request</DialogTitle>
@@ -223,20 +211,25 @@ export default function RegularClients() {
               <OrderForm
                 onClose={() => setIsOrderDialogOpen(false)}
                 clients={clients}
-
                 onSubmit={async (data) => {
                   try {
-
                     if (!data.client) {
-                      return  toast.error("please select client")
+                      return toast.error('please select client')
                     }
                     const payload = {
                       clientId: data.client,
-                      destination: data.destination,
+                      pickupName: data.pickupContactName,
+                      pickupPhone: data.pickupContactPhone,
+                      pickupAddress: data.pickupAddress,
                       quantity: data.quantity,
-                      serviceCost: Number(data.serviceCost)
+                      serviceCharge: Number(data.serviceCharge),
+                      deliveryName: data.deliveryContactName,
+                      deliveryPhone: data.deliveryContactPhone,
+                      deliveryAddress: data.deliveryAddress,
+                      deliveryInstructions: data.deliveryInstructions,
+                      amountReceived: Number(data.amountReceived),
+                      additionalCost: Number(data.additionalCharge)
                     } as any
-
 
                     const res = await window.api.createClientDeliveryOrder(payload)
 
@@ -250,11 +243,11 @@ export default function RegularClients() {
                     setIsOrderDialogOpen(false)
                     await loadClients()
                     return
-                  } catch {      
+                  } catch {
                     toast.error('Failed to create order')
                     return
                   }
-                }}   
+                }}
                 clientType="regular"
               />
             </DialogContent>
@@ -277,12 +270,22 @@ export default function RegularClients() {
         </DialogContent>
       </Dialog>
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard title="Total Customers" value={clients.length } icon={Users} />
-        <MetricCard title="Completed Orders" value={totals?.totalDelivered} icon={TrendingUp} variant="success" />
-        <MetricCard title="Total Revenue" value={totals?.totalRevenue} icon={DollarSign} variant="success" />
+        <MetricCard title="Total Customers" value={clients.length} icon={Users} />
+        <MetricCard
+          title="Completed Orders"
+          value={totals?.totalDelivered}
+          icon={TrendingUp}
+          variant="success"
+        />
+        <MetricCard
+          title="Total Revenue"
+          value={totals?.totalRevenue}
+          icon={DollarSign}
+          variant="success"
+        />
       </div>
 
-      <ClientPerformanceAnalytics setStats={setStats} stats={stats}/>
+      <ClientPerformanceAnalytics setStats={setStats} stats={stats} />
 
       <Card>
         <CardHeader>
@@ -295,7 +298,7 @@ export default function RegularClients() {
                 <TableHead>Order ID</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Phone</TableHead>
-          
+
                 <TableHead>Cost</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
@@ -308,8 +311,10 @@ export default function RegularClients() {
                   <TableCell>{order?.client.fullName}</TableCell>
                   {/*  @ts-ignore */}
                   <TableCell>{order?.client.phone}</TableCell>
-                {/* @ts-ignore */}
-                  <TableCell className="font-medium">{order.deliveryCost + order.serviceCost}</TableCell>
+                  <TableCell className="font-medium">
+                  {/* @ts-ignore */}
+                    {order.deliveryCost + order.serviceCost}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={order.status === 'COMPLETED' ? 'default' : 'secondary'}>
                       {order.status}

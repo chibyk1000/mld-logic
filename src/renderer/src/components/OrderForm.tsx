@@ -9,15 +9,39 @@ import { ScrollArea } from './ui/scroll-area'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
 import { Checkbox } from '@renderer/components/ui/checkbox'
+import { Check, ChevronsUpDown } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
+import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from './ui/command'
+import { cn } from '@renderer/lib/utils'
 
 interface OrderFormProps {
   onClose: () => void
-  onSubmit: (data: any) => void
+  onSubmit: (formData: {
+    client: string
+    warehouse: string
+    products: string[]
+    quantity: number
+
+    serviceCharge: string
+    pickupContactName: string
+    pickupContactPhone: string
+    pickupInstructions: string
+    deliveryContactName: string
+    deliveryContactPhone: string
+    deliveryAddress: string
+    deliveryInstructions: string
+    collectPayment: boolean
+    additionalCharge: string
+    pickupAddress: string
+    amountReceived: string
+  }) => void
   clientType: 'vip' | 'regular'
   clients?: any[]
   warehouses?: any[]
@@ -43,11 +67,11 @@ export function OrderForm({
   const [formData, setFormData] = useState({
     client: '',
     warehouse: '',
-    product: '',
+    products: [] as string[],
     quantity: 0,
-    destination: '',
-    serviceCost: '',
-    deliveryCost: '',
+ 
+    serviceCharge: '',
+
     pickupContactName: '',
     pickupContactPhone: '',
     pickupInstructions: '',
@@ -55,9 +79,11 @@ export function OrderForm({
     deliveryContactPhone: '',
     deliveryAddress: '',
     deliveryInstructions: '',
-    sensitivity: 'MEDIUM',
+ 
     collectPayment: false,
-    additionalCost: ''
+    additionalCharge: '',
+    pickupAddress: '',
+    amountReceived:""
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -73,7 +99,7 @@ export function OrderForm({
           <section className="space-y-4">
             <div className="flex items-center gap-3">
               <StepBadge number={1} />
-              <h3 className="text-lg font-semibold text-foreground">Order Basics</h3>
+              <h3 className="text-lg font-semibold text-foreground">Customer</h3>
             </div>
             <div className="space-y-4 pl-11 border-l-2 border-border">
               {/* Client */}
@@ -81,7 +107,7 @@ export function OrderForm({
                 <Label htmlFor="client" className="text-sm font-medium">
                   {clientType === 'vip' ? 'VIP Client' : 'Customer Name'}
                 </Label>
-             
+
                 <Select onValueChange={(value) => setFormData({ ...formData, client: value })}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select client" />
@@ -119,19 +145,61 @@ export function OrderForm({
 
                   {/* Product */}
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Product</Label>
-                    <Select onValueChange={(value) => setFormData({ ...formData, product: value })}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select product" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {products?.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <label className="text-sm font-medium">Products</label>
+
+                    <Popover >
+                      <PopoverTrigger asChild className=''>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className="w-full justify-between"
+                        >
+                          {formData.products.length > 0
+                            ? `${formData.products.length} selected`
+                            : 'Select products'}
+
+                          <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+
+                      <PopoverContent className="w-sm p-0  ">
+                        <Command>
+                          <CommandEmpty>No product found.</CommandEmpty>
+                          <CommandList>
+                            <CommandGroup>
+                              {products?.map((p) => {
+                                const id = String(p.id)
+
+                                return (
+                                  <CommandItem key={id} onSelect={() => {
+                                        if (formData.products.includes(id)) {
+                                          setFormData((prev) => ({
+                                            ...prev,
+                                            products: formData.products.filter((p) => p !== id)
+                                          }))
+                                        } else {
+                                          setFormData((prev) => ({
+                                            ...prev,
+                                            products: [...formData.products, id]
+                                          }))
+                                        }
+                                  }}>
+                                    <Check
+                                      className={cn(
+                                        'mr-2 h-4 w-4',
+                                        formData.products.includes(id) ? 'opacity-100' : 'opacity-0'
+                                      )}
+                                    />
+
+                                    {p.name}
+                                  </CommandItem>
+                                )
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
                   {/* Quantity */}
@@ -149,56 +217,50 @@ export function OrderForm({
           </section>
 
           {/* STEP 2: PICKUP INFORMATION */}
-          {clientType === 'vip' && (
-            <section className="space-y-4">
-              <div className="flex items-center gap-3">
-                <StepBadge number={2} />
-                <h3 className="text-lg font-semibold text-foreground">Pickup Information</h3>
-              </div>
-              <div className="space-y-4 pl-11 border-l-2 border-border">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Contact Name</Label>
-                    <Input
-                      placeholder="Full name"
-                      value={formData.pickupContactName}
-                      onChange={(e) =>
-                        setFormData({ ...formData, pickupContactName: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Contact Phone</Label>
-                    <Input
-                      placeholder="Phone number"
-                      value={formData.pickupContactPhone}
-                      onChange={(e) =>
-                        setFormData({ ...formData, pickupContactPhone: e.target.value })
-                      }
-                    />
-                  </div>
+          <section className="space-y-4">
+            <div className="flex items-center gap-3">
+              <StepBadge number={2} />
+              <h3 className="text-lg font-semibold text-foreground">Pickup Information</h3>
+            </div>
+            <div className="space-y-4 pl-11 border-l-2 border-border">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Contact Name</Label>
+                  <Input
+                    placeholder="Full name"
+                    value={formData.pickupContactName}
+                    onChange={(e) =>
+                      setFormData({ ...formData, pickupContactName: e.target.value })
+                    }
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>Instructions</Label>
-                  <Textarea
-                    placeholder="Special instructions for pickup..."
-                    rows={3}
-                    value={formData.pickupInstructions}
+                  <Label>Contact Phone</Label>
+                  <Input
+                    placeholder="Phone number"
+                    value={formData.pickupContactPhone}
                     onChange={(e) =>
-                      setFormData({ ...formData, pickupInstructions: e.target.value })
+                      setFormData({ ...formData, pickupContactPhone: e.target.value })
                     }
                   />
                 </div>
               </div>
-            </section>
-          )}
 
-          {/* STEP 3: DELIVERY INFORMATION */}
-          {
-            clientType === "vip" &&
+              {/* Manual Pickup Address */}
+              <div className="space-y-2">
+                <Label>Pickup Address</Label>
+                <Input
+                  placeholder="Pickup Address"
+                  value={formData.pickupAddress}
+                  onChange={(e) => setFormData({ ...formData, pickupAddress: e.target.value })}
+                />
+              </div>
+            </div>
+          </section>
+
           <section className="space-y-4">
             <div className="flex items-center gap-3">
-              <StepBadge number={clientType === 'vip' ? 3 : 2} />
+              <StepBadge number={3} />
               <h3 className="text-lg font-semibold text-foreground">Delivery Information</h3>
             </div>
             <div className="space-y-4 pl-11 border-l-2 border-border">
@@ -244,69 +306,45 @@ export function OrderForm({
                   }
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Sensitivity Level</Label>
-                <Select
-                  value={formData.sensitivity}
-                  onValueChange={(value) => setFormData({ ...formData, sensitivity: value })}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="LOW">Low</SelectItem>
-                    <SelectItem value="MEDIUM">Medium</SelectItem>
-                    <SelectItem value="HIGH">High</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
           </section>
-          }
 
           {/* STEP 4: COSTS & PAYMENT */}
           <section className="space-y-4">
             <div className="flex items-center gap-3">
-              <StepBadge number={clientType === 'vip' ? 4 : 2} />
-              <h3 className="text-lg font-semibold text-foreground">Costs & Payment</h3>
+              <StepBadge number={4} />
+              <h3 className="text-lg font-semibold text-foreground">Charge & Payment</h3>
             </div>
             <div className="space-y-4 pl-11 border-l-2 border-border">
-              {clientType === 'regular' && (
-                <div className="space-y-2">
-                  <Label>Destination</Label>
-                  <Input
-                    placeholder="Destination"
-                    value={formData.destination}
-                    onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
-                    required
-                  />
-                </div>
-              )}
               <div className="space-y-2">
-                <Label>Service Cost</Label>
+                <Label>Amount Received </Label>
                 <Input
                   type="number"
                   placeholder="0.00"
-                  value={formData.serviceCost}
-                  onChange={(e) => setFormData({ ...formData, serviceCost: e.target.value })}
+                  value={formData.amountReceived}
+                  min={0}
+                  onChange={(e) => setFormData({ ...formData, amountReceived: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Delivery Cost</Label>
+                <Label>Service Charge</Label>
                 <Input
                   type="number"
+                  min={0}
                   placeholder="0.00"
-                  value={formData.deliveryCost}
-                  onChange={(e) => setFormData({ ...formData, deliveryCost: e.target.value })}
+                  value={formData.serviceCharge}
+                  onChange={(e) => setFormData({ ...formData, serviceCharge: e.target.value })}
                 />
               </div>
+
               <div className="space-y-2">
-                <Label>Additional Cost</Label>
+                <Label>Additional Charge</Label>
                 <Input
                   type="number"
                   placeholder="0.00"
-                  value={formData.additionalCost}
-                  onChange={(e) => setFormData({ ...formData, additionalCost: e.target.value })}
+                  min={0}
+                  value={formData.additionalCharge}
+                  onChange={(e) => setFormData({ ...formData, additionalCharge: e.target.value })}
                 />
               </div>
               <div className="flex items-center space-x-3 cursor-pointer">

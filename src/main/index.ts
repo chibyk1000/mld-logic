@@ -11,7 +11,7 @@ function createWindow(): void {
     height: 670,
     show: false,
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform === 'linux' ? { icon } : {icon}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -348,7 +348,6 @@ app.whenReady().then(() => {
   })
 
   // -------------------- CLIENTS GLOBAL STATS --------------------
-  // -------------------- CLIENTS GLOBAL STATS --------------------
   ipcMain.handle('clients:stats', async () => {
     try {
       // ===== BASE TOTALS =====
@@ -358,11 +357,13 @@ app.whenReady().then(() => {
 
       const totalRequested = orders.length
       const totalDelivered = orders.filter((o) =>
-        ['completed', 'delivered'].includes(o.status)
+        ['completed', 'delivered'].includes(o.status.toLowerCase())
       ).length
-      const totalFailed = orders.filter((o) => ['failed', 'cancelled'].includes(o.status)).length
+      const totalFailed = orders.filter((o) =>
+        ['failed', 'cancelled'].includes(o.status.toLowerCase())
+      ).length
       const totalRevenue = orders.reduce(
-        (sum, o) => sum + (o.serviceCost || 0) + (o.deliveryCost || 0) + (o.additionalCost || 0),
+        (sum, o) => sum + (o.serviceCharge || 0) + (o.additionalCharge || 0),
         0
       )
 
@@ -373,17 +374,17 @@ app.whenReady().then(() => {
       const weekly: any[] = db
         .prepare(
           `
-    SELECT 
-      strftime('%W', createdAt) AS week,
-      COUNT(*) AS totalOrders,
-      SUM(CASE WHEN status IN ('completed','delivered') THEN 1 ELSE 0 END) AS delivered,
-      SUM(CASE WHEN status IN ('failed','cancelled') THEN 1 ELSE 0 END) AS failed
-    FROM "DeliveryOrder"
-    WHERE createdAt >= date('now', '-28 days')
-      AND clientId IS NOT NULL
-    GROUP BY week
-    ORDER BY week ASC
-  `
+      SELECT 
+        strftime('%W', createdAt) AS week,
+        COUNT(*) AS requested,
+        SUM(CASE WHEN LOWER(status) IN ('completed','delivered') THEN 1 ELSE 0 END) AS delivered,
+        SUM(CASE WHEN LOWER(status) IN ('failed','cancelled') THEN 1 ELSE 0 END) AS failed
+      FROM "DeliveryOrder"
+      WHERE createdAt >= date('now', '-28 days')
+        AND clientId IS NOT NULL
+      GROUP BY week
+      ORDER BY week ASC
+      `
         )
         .all()
 
@@ -394,7 +395,6 @@ app.whenReady().then(() => {
         failed: w.failed || 0
       }))
 
-      // Ensure exactly 4 weeks in chart
       while (weeklyData.length < 4) {
         weeklyData.push({
           period: `Week ${weeklyData.length + 1}`,
@@ -408,17 +408,17 @@ app.whenReady().then(() => {
       const monthly: any[] = db
         .prepare(
           `
-    SELECT 
-      CAST(strftime('%m', createdAt) AS INTEGER) AS month,
-      COUNT(*) AS requested,
-      SUM(CASE WHEN status IN ('completed','delivered') THEN 1 ELSE 0 END) AS delivered,
-      SUM(CASE WHEN status IN ('failed','cancelled') THEN 1 ELSE 0 END) AS failed
-    FROM "DeliveryOrder"
-    WHERE createdAt >= date('now', '-6 months')
-      AND clientId IS NOT NULL
-    GROUP BY month
-    ORDER BY month ASC
-  `
+      SELECT 
+        CAST(strftime('%m', createdAt) AS INTEGER) AS month,
+        COUNT(*) AS requested,
+        SUM(CASE WHEN LOWER(status) IN ('completed','delivered') THEN 1 ELSE 0 END) AS delivered,
+        SUM(CASE WHEN LOWER(status) IN ('failed','cancelled') THEN 1 ELSE 0 END) AS failed
+      FROM "DeliveryOrder"
+      WHERE createdAt >= date('now', '-6 months')
+        AND clientId IS NOT NULL
+      GROUP BY month
+      ORDER BY month ASC
+      `
         )
         .all()
 
@@ -843,6 +843,115 @@ app.whenReady().then(() => {
     }
   })
 
+  // In your main process (e.g., index.ts)
+ipcMain.handle('warehouse:listProducts', (_, warehouseId: string) => {
+  try {
+
+    console.log('Listing products for warehouseId:', warehouseId)
+    if (!warehouseId) {
+     return fail('warehouseId is required')
+    }
+
+    const products = db
+      .prepare(
+        `
+        SELECT 
+          p.id AS productId,
+          p.name AS productName,
+          p.price,
+          i.quantity
+        FROM "Inventory" i
+        INNER JOIN "Product" p ON p.id = i.productId
+        WHERE i.warehouseId = ?
+      `
+      )
+      .all(warehouseId) // ✅ pass warehouseId as parameter
+
+    return { data: products }
+  } catch (err) {
+    console.error('Failed to list warehouse products:', err)
+    return { error: 'Failed to list warehouse products' }
+  }
+})
+
+
+
+
+ipcMain.handle(
+  'warehouse:transferStock',
+  (
+    _,
+    payload: {
+      fromWarehouseId: string
+      toWarehouseId: string
+      products: { id: string; quantity: number }[]
+      note?: string
+    }
+  ) => {
+    const { fromWarehouseId, toWarehouseId, products, note } = payload
+
+    try {
+      for (const product of products) {
+        const { id: productId, quantity } = product
+
+        // Check source inventory
+        const fromInventory: any = db
+          .prepare(`SELECT quantity FROM "Inventory" WHERE warehouseId = ? AND productId = ?`)
+          .get(fromWarehouseId, productId)
+
+        if (!fromInventory || fromInventory.quantity < quantity) {
+          return { error: `Insufficient stock for product ${productId}` }
+        }
+
+        // Deduct from source
+        db.prepare(
+          `UPDATE "Inventory" SET quantity = quantity - ? WHERE warehouseId = ? AND productId = ?`
+        ).run(quantity, fromWarehouseId, productId)
+
+        // Add to destination (insert if doesn't exist)
+        const destExists = db
+          .prepare(`SELECT quantity FROM "Inventory" WHERE warehouseId = ? AND productId = ?`)
+          .get(toWarehouseId, productId)
+
+        if (destExists) {
+          db.prepare(
+            `UPDATE "Inventory" SET quantity = quantity + ? WHERE warehouseId = ? AND productId = ?`
+          ).run(quantity, toWarehouseId, productId)
+        } else {
+          // Get vendorId from source inventory
+          const vendor:any =
+            db
+              .prepare(`SELECT vendorId FROM "Inventory" WHERE warehouseId = ? AND productId = ?`)
+              .get(fromWarehouseId, productId)
+
+          db.prepare(
+            `INSERT INTO "Inventory"(id, vendorId, warehouseId, productId, quantity) VALUES (?, ?, ?, ?, ?)`
+          ).run(crypto.randomUUID(), vendor.vendorId, toWarehouseId, productId, quantity)
+        }
+
+        // Log transfer
+        db.prepare(
+          `INSERT INTO "StockTransferLog"(id, productId, fromWarehouseId, toWarehouseId, quantity, note) VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(
+          crypto.randomUUID(),
+          productId,
+          fromWarehouseId,
+          toWarehouseId,
+          quantity,
+          note || null
+        )
+      }
+
+      return { success: true }
+    } catch (err) {
+      console.error('Failed to transfer stock:', err)
+      return { error: 'Failed to transfer stock' }
+    }
+  }
+)
+
+
+
   //-------------------------------------------------------------
   // ORDERS
   //-------------------------------------------------------------
@@ -850,114 +959,167 @@ app.whenReady().then(() => {
   // -------------------- CREATE ORDER --------------------
   ipcMain.handle('orders:create', async (_, data) => {
     try {
-      // Validate stock
-      const stock: any = db
-        .prepare(
-          `SELECT * FROM "Inventory" WHERE vendorId = ? AND warehouseId = ? AND productId = ?`
-        )
-        .get(data.vendorId, data.warehouseId, data.productId)
+      const products = data.productIds || [] // array of product IDs
+      const quantities = data.quantity || {} // { productId: number }
 
-      if (!stock || stock.quantity < data.quantity) {
-        return fail('Insufficient stock')
+      if (!Array.isArray(products) || products.length === 0) {
+        return fail('Products array is required')
       }
 
-      // Decrement inventory
-      db.prepare(
-        `UPDATE "Inventory" SET quantity = quantity - ? WHERE vendorId = ? AND warehouseId = ? AND productId = ?`
-      ).run(data.quantity, data.vendorId, data.warehouseId, data.productId)
+      // ——————————————————————————
+      // STEP 1: Validate stock for *each* product
+      // ——————————————————————————
+      for (const productId of products) {
+        const qty = Number(quantities[productId] || 1)
 
-      // Create order
-      const id = crypto.randomUUID()
+        const stock: any = db
+          .prepare(
+            `SELECT * FROM "Inventory" 
+           WHERE vendorId = ? 
+           AND warehouseId = ? 
+           AND productId = ?`
+          )
+          .get(data.vendorId, data.warehouseId, productId)
+
+        if (!stock || stock.quantity < qty) {
+          return fail(`Insufficient stock for product: ${productId}`)
+        }
+      }
+
+      // ——————————————————————————
+      // STEP 2: Decrement stock for each product
+      // ——————————————————————————
+      for (const productId of products) {
+        const qty = Number(quantities[productId] || 1)
+
+        db.prepare(
+          `UPDATE "Inventory" 
+         SET quantity = quantity - ? 
+         WHERE vendorId = ? 
+         AND warehouseId = ? 
+         AND productId = ?`
+        ).run(qty, data.vendorId, data.warehouseId, productId)
+      }
+
+      // ——————————————————————————
+      // STEP 3: Create DeliveryOrder (NO productId here)
+      // ——————————————————————————
+      const orderId = crypto.randomUUID()
+
       db.prepare(
         `INSERT INTO "DeliveryOrder" (
-        id, vendorId, productId, quantity,
-        clientId, agentId, warehouseId,
+        id, vendorId, clientId, agentId, warehouseId,
         pickupContactName, pickupContactPhone, pickupInstructions,
-        deliveryContactName, deliveryContactPhone, deliveryInstructions, deliveryAddress,
-        serviceCost, deliveryCost, additionalCost, sensitivity,
-        status, collectPayment, destination
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        deliveryContactName, deliveryContactPhone, deliveryContactEmail,
+        deliveryInstructions, deliveryAddress,
+        serviceCharge, amountReceived, additionalCharge,
+        collectPayment, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
-        id,
+        orderId,
         data.vendorId || null,
-        data.productId || null,
-        data.quantity,
         data.clientId || null,
         data.agentId || null,
         data.warehouseId || null,
+
         data.pickupContactName || null,
         data.pickupContactPhone || null,
         data.pickupInstructions || null,
+
         data.deliveryContactName || null,
         data.deliveryContactPhone || null,
+        data.deliveryContactEmail || null,
         data.deliveryInstructions || null,
         data.deliveryAddress || null,
-        data.serviceCost || 0,
-        data.deliveryCost || 0,
-        data.additionalCost || 0,
-        data.sensitivity || 'MEDIUM',
-        data.status || 'PENDING',
+
+        data.serviceCharge || 0,
+        data.amountReceived || 0,
+        data.additionalCharge || 0,
+
         data.collectPayment ? 1 : 0,
-        data.destination || null
+        'PENDING'
       )
 
-      const order: any = db.prepare('SELECT * FROM "DeliveryOrder" WHERE id = ?').get(id)
+      // ——————————————————————————
+      // STEP 4: Insert products into DeliveryOrderProduct
+      // ——————————————————————————
+      for (const productId of products) {
+        const qty = Number(quantities[productId] || 1)
 
-      // Attach related entities
+        db.prepare(
+          `INSERT INTO "DeliveryOrderProduct" (id, orderId, productId, quantity)
+         VALUES (?, ?, ?, ?)`
+        ).run(crypto.randomUUID(), orderId, productId, qty)
+      }
+
+      // ——————————————————————————
+      // STEP 5: Fetch related entities
+      // ——————————————————————————
+      const order: any = db.prepare(`SELECT * FROM "DeliveryOrder" WHERE id = ?`).get(orderId)
+
       const vendor = order.vendorId
-        ? db.prepare('SELECT * FROM "Vendor" WHERE id = ?').get(order.vendorId)
-        : null
-      const client = order.clientId
-        ? db.prepare('SELECT * FROM "Client" WHERE id = ?').get(order.clientId)
-        : null
-      const product = order.productId
-        ? db.prepare('SELECT * FROM "Product" WHERE id = ?').get(order.productId)
-        : null
-      const agent = order.agentId
-        ? db.prepare('SELECT * FROM "Agent" WHERE id = ?').get(order.agentId)
+        ? db.prepare(`SELECT * FROM "Vendor" WHERE id = ?`).get(order.vendorId)
         : null
 
-      // --- LINK ORDER TO REMITTANCE USING CLIENT/VENDOR ---
-      if (order.clientId || order.vendorId) {
+      const client = order.clientId
+        ? db.prepare(`SELECT * FROM "Client" WHERE id = ?`).get(order.clientId)
+        : null
+
+      const agent = order.agentId
+        ? db.prepare(`SELECT * FROM "Agent" WHERE id = ?`).get(order.agentId)
+        : null
+
+      // Fetch attached products
+      const orderProducts = db
+        .prepare(
+          `SELECT p.*, dop.quantity
+         FROM "DeliveryOrderProduct" dop
+         JOIN "Product" p ON p.id = dop.productId
+         WHERE dop.orderId = ?`
+        )
+        .all(orderId)
+
+      // ——————————————————————————
+      // STEP 6: Remittance linking
+      // ——————————————————————————
+      if (order.vendorId || order.clientId) {
         let remittance: any = db
           .prepare(
-            `SELECT * FROM "Remittance" WHERE clientId = ? AND vendorId = ? AND status = 'PENDING' ORDER BY createdAt DESC LIMIT 1`
+            `SELECT * FROM "Remittance"
+           WHERE vendorId = ? 
+           AND status = 'PENDING'
+           ORDER BY createdAt DESC LIMIT 1`
           )
-          .get(order.clientId || null, order.vendorId || null)
+          .get(order.vendorId || null)
 
         if (!remittance) {
           const remId = crypto.randomUUID()
           db.prepare(
-            `INSERT INTO "Remittance" (id, clientId, vendorId, totalCost, amountLeft, status)
-           VALUES (?, ?, ?, 0, 0, 'PENDING')`
-          ).run(remId, order.clientId || null, order.vendorId || null)
-          remittance = db.prepare('SELECT * FROM "Remittance" WHERE id = ?').get(remId)
+            `INSERT INTO "Remittance" (id, vendorId, status)
+           VALUES (?, ?, 'PENDING')`
+          ).run(remId, order.vendorId || null)
+
+          remittance = db.prepare(`SELECT * FROM "Remittance" WHERE id = ?`).get(remId)
         }
 
-        const expectedAmount = order.serviceCost || 0
-
-        // Link order to remittance
         const roId = crypto.randomUUID()
-        db.prepare(
-          `INSERT INTO "RemittanceOrder" (id, remittanceId, orderId, expectedAmount, receivedAmount)
-         VALUES (?, ?, ?, ?, 0)`
-        ).run(roId, remittance.id, order.id, expectedAmount)
-
-        // Update remittance totals
-        const totalCost: any = db
-          .prepare(
-            `SELECT SUM(expectedAmount) as total FROM "RemittanceOrder" WHERE remittanceId = ?`
-          )
-          .get(remittance.id)
 
         db.prepare(
-          `UPDATE "Remittance" SET totalCost = ?, amountLeft = totalCost - COALESCE((SELECT SUM(receivedAmount) FROM "RemittanceOrder" WHERE remittanceId = ?), 0), updatedAt = CURRENT_TIMESTAMP WHERE id = ?`
-        ).run(totalCost.total, remittance.id, remittance.id)
+          `INSERT INTO "RemittanceOrder" 
+         (id, remittanceId, orderId, amountCharged, receivedAmount)
+         VALUES (?, ?, ?, ?, ?)`
+        ).run(roId, remittance.id, orderId, order.serviceCharge || 0, order.amountReceived || 0)
       }
 
-      return ok({ ...order, vendor, client, product, agent })
+      return ok({
+        ...order,
+        vendor,
+        client,
+        agent,
+        products: orderProducts
+      })
     } catch (err) {
-      console.error(err)
+      console.log(err)
       return fail('Failed to create order')
     }
   })
@@ -967,85 +1129,84 @@ app.whenReady().then(() => {
     try {
       const id = crypto.randomUUID()
 
-      // Insert new delivery order
       db.prepare(
-        `INSERT INTO "DeliveryOrder" (
-        id, vendorId, productId, quantity, clientId, agentId, warehouseId, destination,
-        serviceCost, deliveryCost, additionalCost, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `
+      INSERT INTO "DeliveryOrder" (
+        id,
+        vendorId,
+        clientId,
+        agentId,
+        warehouseId,
+
+        serviceCharge,
+        amountReceived,
+
+        pickupContactName,
+        pickupContactPhone,
+        pickupInstructions,
+
+        deliveryContactName,
+        deliveryContactPhone,
+        deliveryContactEmail,
+        deliveryInstructions,
+        deliveryAddress,
+
+        collectPayment,
+        additionalCharge,
+
+        status,
+        createdAt,
+        updatedAt
+      )
+      VALUES (
+        ?, ?, ?, ?, ?,
+        ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?,
+        'PENDING',
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+      `
       ).run(
         id,
         data.vendorId || null,
-        data.productId || null,
-        data.quantity,
-        data.clientId || null,
+        data.clientId,
         data.agentId || null,
         data.warehouseId || null,
-        data.destination || null,
-        data.serviceCost || 0,
-        data.deliveryCost || 0,
-        data.additionalCost || 0,
-        data.status || 'PENDING'
+
+        // Pricing (order-level, NOT accounting source)
+        data.serviceCharge ?? 0,
+        data.amountReceived ?? 0,
+
+        // Pickup
+        data.pickupContactName || null,
+        data.pickupContactPhone || null,
+        data.pickupInstructions || null,
+
+        // Delivery
+        data.deliveryContactName || null,
+        data.deliveryContactPhone || null,
+        data.deliveryContactEmail || null,
+        data.deliveryInstructions || null,
+        data.deliveryAddress || null,
+
+        // Payment
+        data.collectPayment ? 1 : 0,
+        data.additionalCharge ?? 0
       )
 
-      const order: any = db.prepare('SELECT * FROM "DeliveryOrder" WHERE id = ?').get(id)
+      const order: any = db.prepare(`SELECT * FROM "DeliveryOrder" WHERE id = ?`).get(id)
 
-      // Fetch related entities
-      const vendor = order.vendorId
-        ? db.prepare('SELECT * FROM "Vendor" WHERE id = ?').get(order.vendorId)
-        : null
       const client = order.clientId
-        ? db.prepare('SELECT * FROM "Client" WHERE id = ?').get(order.clientId)
-        : null
-      const product = order.productId
-        ? db.prepare('SELECT * FROM "Product" WHERE id = ?').get(order.productId)
-        : null
-      const agent = order.agentId
-        ? db.prepare('SELECT * FROM "Agent" WHERE id = ?').get(order.agentId)
+        ? db.prepare(`SELECT * FROM "Client" WHERE id = ?`).get(order.clientId)
         : null
 
-      // --- LINK ORDER TO REMITTANCE (client) ---
-      if (order.clientId) {
-        let remittance: any = db
-          .prepare(
-            `SELECT * FROM "Remittance" WHERE clientId = ? AND status = 'PENDING' ORDER BY createdAt DESC LIMIT 1`
-          )
-          .get(order.clientId)
-
-        // Create a remittance if none exists
-        if (!remittance) {
-          const remId = crypto.randomUUID()
-          db.prepare(
-            `INSERT INTO "Remittance" (id, clientId, totalCost, amountLeft, status)
-           VALUES (?, ?, 0, 0, 'PENDING')`
-          ).run(remId, order.clientId)
-          remittance = db.prepare('SELECT * FROM "Remittance" WHERE id = ?').get(remId)
-        }
-
-        // Calculate order total
-        const orderTotal =
-          (order.serviceCost || 0) + (order.deliveryCost || 0) + (order.additionalCost || 0)
-
-        // Link the order to the remittance
-        const roId = crypto.randomUUID()
-        db.prepare(
-          `INSERT INTO "RemittanceOrder" (id, remittanceId, orderId, expectedAmount, receivedAmount)
-         VALUES (?, ?, ?, ?, 0)`
-        ).run(roId, remittance.id, order.id, orderTotal)
-
-        // Update remittance totals
-        const totalCost: any = db
-          .prepare(
-            `SELECT SUM(expectedAmount) as total FROM "RemittanceOrder" WHERE remittanceId = ?`
-          )
-          .get(remittance.id)
-
-        db.prepare(
-          `UPDATE "Remittance" SET totalCost = ?, amountLeft = totalCost, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`
-        ).run(totalCost.total, remittance.id)
-      }
-
-      return ok({ ...order, vendor, client, product, agent })
+      return ok({
+        ...order,
+        client
+      })
     } catch (err) {
       console.error(err)
       return fail('Failed to create order')
@@ -1055,37 +1216,48 @@ app.whenReady().then(() => {
   // -------------------- LIST ORDERS --------------------
   ipcMain.handle('orders:list', async () => {
     try {
-      // Fetch all orders, newest first
-      const orders: any = db.prepare('SELECT * FROM "DeliveryOrder" ORDER BY createdAt DESC').all()
+      const orders = db.prepare(`SELECT * FROM "DeliveryOrder" ORDER BY createdAt DESC`).all()
 
-      const result = orders.map((order: { vendorId: unknown; clientId: unknown; productId: unknown; agentId: unknown; id: unknown }) => {
+      const result = orders.map((order: any) => {
         const vendor = order.vendorId
-          ? db.prepare('SELECT * FROM "Vendor" WHERE id = ?').get(order.vendorId)
+          ? db.prepare(`SELECT * FROM "Vendor" WHERE id = ?`).get(order.vendorId)
           : null
+
         const client = order.clientId
-          ? db.prepare('SELECT * FROM "Client" WHERE id = ?').get(order.clientId)
+          ? db.prepare(`SELECT * FROM "Client" WHERE id = ?`).get(order.clientId)
           : null
+
         const product = order.productId
-          ? db.prepare('SELECT * FROM "Product" WHERE id = ?').get(order.productId)
+          ? db.prepare(`SELECT * FROM "Product" WHERE id = ?`).get(order.productId)
           : null
+
         const agent = order.agentId
-          ? db.prepare('SELECT * FROM "Agent" WHERE id = ?').get(order.agentId)
+          ? db.prepare(`SELECT * FROM "Agent" WHERE id = ?`).get(order.agentId)
           : null
 
-        // Optional: attach related remittance info
-        let remittance: any = null
-        if (order.clientId) {
-          remittance = db
-            .prepare(
-              `SELECT r.*, ro.expectedAmount, ro.receivedAmount 
-             FROM "Remittance" r 
-             JOIN "RemittanceOrder" ro ON ro.remittanceId = r.id
-             WHERE ro.orderId = ?`
-            )
-            .get(order.id)
-        }
+        // ✅ Correct remittance lookup
+        const remittance = db
+          .prepare(
+            `
+          SELECT 
+            r.*,
+            ro.amountCharged,
+            ro.receivedAmount
+          FROM "RemittanceOrder" ro
+          JOIN "Remittance" r ON r.id = ro.remittanceId
+          WHERE ro.orderId = ?
+        `
+          )
+          .get(order.id)
 
-        return { ...order, vendor, client, product, agent, remittance }
+        return {
+          ...order,
+          vendor,
+          client,
+          product,
+          agent,
+          remittance: remittance ?? null
+        }
       })
 
       return ok(result)
@@ -1096,7 +1268,6 @@ app.whenReady().then(() => {
   })
 
   //------------------------------Assign Orders-------------------------------
-
 
   ipcMain.handle('orders:assignAgent', async (_event, { orderId, agentId }) => {
     try {
@@ -1119,7 +1290,6 @@ app.whenReady().then(() => {
     }
   })
 
-
   //-------------------------------------------------------------
   // REMITTANCES
   //-------------------------------------------------------------
@@ -1127,51 +1297,46 @@ app.whenReady().then(() => {
   // -------------------- LIST REMITTANCES --------------------
   ipcMain.handle('remittances:list', async () => {
     try {
-      const remittances: any[] = db
+      const remittances = db
         .prepare(
           `
-      SELECT r.*, 
-             c.fullName AS clientName, 
-             v.companyName AS vendorName
-      FROM "Remittance" r
-      LEFT JOIN "Client" c ON c.id = r.clientId
-      LEFT JOIN "Vendor" v ON v.id = r.vendorId
-      ORDER BY r.createdAt DESC
-    `
+        SELECT 
+          r.*,
+          v.companyName AS vendorName
+        FROM "Remittance" r
+        LEFT JOIN "Vendor" v ON v.id = r.vendorId
+        ORDER BY r.createdAt DESC
+        `
         )
         .all()
 
-      const result = remittances.map((r) => {
-        const orders: any[] = db
+      const result = remittances.map((r: any) => {
+        const orders: any = db
           .prepare(
             `
-        SELECT ro.*, do.id AS orderId, do.serviceCost, do.deliveryCost, do.additionalCost
-        FROM "RemittanceOrder" ro
-        LEFT JOIN "DeliveryOrder" do ON do.id = ro.orderId
-        WHERE ro.remittanceId = ?
-      `
+          SELECT 
+            ro.orderId,
+            ro.amountCharged,
+            ro.receivedAmount
+          FROM "RemittanceOrder" ro
+          WHERE ro.remittanceId = ?
+          `
           )
           .all(r.id)
 
-        const payments: any[] = db
-          .prepare(`SELECT * FROM "RemittancePayment" WHERE remittanceId = ?`)
-          .all(r.id)
+        const totalCharged = orders.reduce((sum, o) => sum + (o.amountCharged || 0), 0)
 
-        const totalCost = orders.reduce(
-          (sum, o) => sum + (o.serviceCost || 0) + (o.deliveryCost || 0) + (o.additionalCost || 0),
-          0
-        )
-        const amountReceived = payments.reduce((sum, p) => sum + (p.amount || 0), 0)
-        const amountLeft = totalCost - amountReceived
+        const totalReceived = orders.reduce((sum, o) => sum + (o.receivedAmount || 0), 0)
+
+        const amountLeft = totalReceived - totalCharged
 
         return {
           ...r,
           orders,
-          payments,
           orderCount: orders.length,
-          totalCost: `${totalCost.toFixed(2)}`,
-          paymentReceived: `${amountReceived.toFixed(2)}`,
-          amountLeft: `${amountLeft.toFixed(2)}`
+          totalCharged: totalCharged.toFixed(2),
+          totalReceived: totalReceived.toFixed(2),
+          amountLeft: amountLeft.toFixed(2)
         }
       })
 
@@ -1183,83 +1348,175 @@ app.whenReady().then(() => {
   })
 
   // -------------------- CREATE REMITTANCE --------------------
-  ipcMain.handle('remittances:create', async (_, { clientId, vendorId, orders }) => {
+  ipcMain.handle('remittances:create', async (_, { vendorId, orders }) => {
     try {
-      const id = crypto.randomUUID()
-      const totalCost = orders.reduce(
-        (sum, o) => sum + (o.serviceCost || 0) + (o.deliveryCost || 0) + (o.additionalCost || 0),
-        0
-      )
+      if (!orders || !orders.length) {
+        return fail('No orders provided')
+      }
 
-      db.prepare(
-        `
-      INSERT INTO "Remittance" (id, clientId, vendorId, totalCost, amountLeft, status)
-      VALUES (?, ?, ?, ?, ?, 'PENDING')
-    `
-      ).run(id, clientId, vendorId || null, totalCost, totalCost)
+      const remittanceId = crypto.randomUUID()
 
-      // Insert remittance orders
-      orders.forEach((o) => {
-        const roId = crypto.randomUUID()
+      db.transaction(() => {
+        /** 1️⃣ Create remittance */
         db.prepare(
           `
-        INSERT INTO "RemittanceOrder" (id, remittanceId, orderId, expectedAmount, receivedAmount)
-        VALUES (?, ?, ?, ?, 0)
-      `
-        ).run(
-          roId,
-          id,
-          o.orderId,
-          (o.serviceCost || 0) + (o.deliveryCost || 0) + (o.additionalCost || 0)
-        )
-      })
+          INSERT INTO "Remittance" (id, vendorId, status)
+          VALUES (?, ?, 'PENDING')
+          `
+        ).run(remittanceId, vendorId || null)
 
-      const remittance = db.prepare('SELECT * FROM "Remittance" WHERE id = ?').get(id)
+        /** 2️⃣ Attach orders */
+        for (const o of orders) {
+          if (!o.orderId || typeof o.amountCharged !== 'number') {
+            throw new Error('Invalid order payload')
+          }
+
+          db.prepare(
+            `
+            INSERT INTO "RemittanceOrder"
+              (id, remittanceId, orderId, amountCharged, receivedAmount)
+            VALUES (?, ?, ?, ?, 0)
+            `
+          ).run(crypto.randomUUID(), remittanceId, o.orderId, o.amountCharged)
+        }
+      })()
+
+      /** 3️⃣ Return created remittance (summary) */
+      const remittance = db
+        .prepare(
+          `
+          SELECT
+            r.*,
+            COUNT(ro.id) AS orderCount,
+            COALESCE(SUM(ro.amountCharged), 0) AS totalCharged
+          FROM "Remittance" r
+          LEFT JOIN "RemittanceOrder" ro ON ro.remittanceId = r.id
+          WHERE r.id = ?
+          GROUP BY r.id
+          `
+        )
+        .get(remittanceId)
+
       return ok(remittance)
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      return fail('Failed to create remittance')
+      return fail(err.message || 'Failed to create remittance')
     }
   })
 
   // -------------------- ADD PAYMENT TO REMITTANCE --------------------
   ipcMain.handle(
     'remittances:add_payment',
-    async (_, { remittanceId, amount, method, reference, notes }) => {
+    async (_, { remittanceId, vendorId, amount, method, reference, notes }) => {
       try {
         const paymentId = crypto.randomUUID()
-        db.prepare(
-          `
-      INSERT INTO "RemittancePayment" (id, remittanceId, amount, method, reference, notes)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `
-        ).run(paymentId, remittanceId, amount, method || null, reference || null, notes || null)
 
-        // Update remittance totals
-        const remittance: any = db
-          .prepare('SELECT * FROM "Remittance" WHERE id = ?')
-          .get(remittanceId)
-        const totalReceived: any = db
-          .prepare(
-            `SELECT SUM(amount) as totalReceived FROM "RemittancePayment" WHERE remittanceId = ?`
+        db.transaction(() => {
+          /** 1️⃣ Validate remittance + vendor */
+          const remittance: any = db
+            .prepare(`SELECT vendorId FROM "Remittance" WHERE id = ?`)
+            .get(remittanceId)
+
+          if (!remittance) {
+            throw new Error('Remittance not found')
+          }
+
+          if (remittance.vendorId && remittance.vendorId !== vendorId) {
+            throw new Error('Vendor does not match remittance vendor')
+          }
+
+          /** 2️⃣ Insert payment */
+          db.prepare(
+            `
+          INSERT INTO "RemittancePayment"
+            (id, remittanceId, vendorId, amount, method, reference, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          `
+          ).run(
+            paymentId,
+            remittanceId,
+            vendorId,
+            amount,
+            method || null,
+            reference || null,
+            notes || null
           )
-          .get(remittanceId)
 
-        const received = totalReceived.totalReceived || 0
-        const amountLeft = remittance.totalCost - received
-        const status =
-          received >= remittance.totalCost ? 'PAID' : received > 0 ? 'PARTIAL' : 'PENDING'
-
-        db.prepare(
+          /** 3️⃣ Fetch unpaid orders */
+          const orders: any = db
+            .prepare(
+              `
+          SELECT id, amountCharged, receivedAmount
+          FROM "RemittanceOrder"
+          WHERE remittanceId = ?
+          ORDER BY createdAt ASC
           `
-      UPDATE "Remittance" SET amountLeft = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?
-    `
-        ).run(amountLeft, status, remittanceId)
+            )
+            .all(remittanceId)
 
-        return ok({ remittanceId, totalReceived: received, amountLeft, status })
-      } catch (err) {
+          let remaining = amount
+
+          /** 4️⃣ Allocate payment */
+          for (const order of orders) {
+            if (remaining <= 0) break
+
+            const balance = order.amountCharged - order.receivedAmount
+
+            if (balance <= 0) continue
+
+            const applied = Math.min(balance, remaining)
+
+            db.prepare(
+              `
+            UPDATE "RemittanceOrder"
+            SET receivedAmount = receivedAmount + ?
+            WHERE id = ?
+            `
+            ).run(applied, order.id)
+
+            remaining -= applied
+          }
+
+          /** 5️⃣ Recalculate remittance status */
+          const totals: any = db
+            .prepare(
+              `
+          SELECT
+            COALESCE(SUM(amountCharged), 0) AS totalCharged,
+            COALESCE(SUM(receivedAmount), 0) AS totalReceived
+          FROM "RemittanceOrder"
+          WHERE remittanceId = ?
+          `
+            )
+            .get(remittanceId)
+
+          let status: 'PENDING' | 'PARTIAL' | 'PAID' = 'PENDING'
+
+          if (totals.totalCharged > 0 && totals.totalReceived >= totals.totalCharged) {
+            status = 'PAID'
+          } else if (totals.totalReceived > 0) {
+            status = 'PARTIAL'
+          }
+
+          db.prepare(
+            `
+          UPDATE "Remittance"
+          SET status = ?, updatedAt = CURRENT_TIMESTAMP
+          WHERE id = ?
+          `
+          ).run(status, remittanceId)
+        })()
+
+        return ok({
+          paymentId,
+          remittanceId,
+          vendorId,
+          amount,
+          message: 'Payment recorded successfully'
+        })
+      } catch (err: any) {
         console.error(err)
-        return fail('Failed to add payment')
+        return fail(err.message || 'Failed to add payment')
       }
     }
   )
@@ -1267,36 +1524,74 @@ app.whenReady().then(() => {
   // -------------------- GET REMITTANCE BY ID --------------------
   ipcMain.handle('remittances:get', async (_, { id }) => {
     try {
+      /** 1️⃣ Remittance core */
       const remittance = db
         .prepare(
           `
-      SELECT r.*, c.fullName as clientName, v.companyName as vendorName
-      FROM "Remittance" r
-      LEFT JOIN "Client" c ON c.id = r.clientId
-      LEFT JOIN "Vendor" v ON v.id = r.vendorId
-      WHERE r.id = ?
-    `
+        SELECT
+          r.*,
+          v.companyName AS vendorName
+        FROM "Remittance" r
+        LEFT JOIN "Vendor" v ON v.id = r.vendorId
+        WHERE r.id = ?
+        `
         )
         .get(id)
 
       if (!remittance) return fail('Remittance not found')
 
-      const orders = db
+      /** 2️⃣ Orders under this remittance */
+      const orders: any = db
         .prepare(
           `
-      SELECT ro.*, do.id as orderId, do.serviceCost, do.deliveryCost, do.additionalCost
-      FROM "RemittanceOrder" ro
-      LEFT JOIN "DeliveryOrder" do ON do.id = ro.orderId
-      WHERE ro.remittanceId = ?
-    `
+        SELECT
+          ro.id,
+          ro.orderId,
+          ro.amountCharged,
+          ro.receivedAmount,
+          ro.createdAt
+        FROM "RemittanceOrder" ro
+        WHERE ro.remittanceId = ?
+        ORDER BY ro.createdAt ASC
+        `
         )
         .all(id)
 
+      /** 3️⃣ Payments */
       const payments = db
-        .prepare('SELECT * FROM "RemittancePayment" WHERE remittanceId = ?')
+        .prepare(
+          `
+        SELECT
+          id,
+          vendorId,
+          amount,
+          method,
+          reference,
+          notes,
+          createdAt
+        FROM "RemittancePayment"
+        WHERE remittanceId = ?
+        ORDER BY createdAt ASC
+        `
+        )
         .all(id)
 
-      return ok({ ...remittance, orders, payments })
+      /** 4️⃣ Totals (derived, not stored) */
+      const totalCharged: any = orders.reduce((sum, o) => sum + (o.amountCharged || 0), 0)
+
+      const totalReceived: any = orders.reduce((sum, o) => sum + (o.receivedAmount || 0), 0)
+
+      return ok({
+        ...remittance,
+        orders,
+        payments,
+        summary: {
+          orderCount: orders.length,
+          totalCharged: totalCharged.toFixed(2),
+          totalReceived: totalReceived.toFixed(2),
+          amountLeft: (totalCharged - totalReceived).toFixed(2)
+        }
+      })
     } catch (err) {
       console.error(err)
       return fail('Failed to get remittance')
@@ -1314,73 +1609,172 @@ app.whenReady().then(() => {
     }
   })
 
-  function getDateFilter(period?: 'daily' | 'weekly' | 'monthly') {
-    if (!period) return ''
-    const now = new Date()
-    let startDate: string
+  ipcMain.handle('remittances:metrics', () => {
+    try {
+      // =========================
+      // 1. TOTAL PENDING
+      // =========================
+      const totalPending: any = db
+        .prepare(
+          `
+    SELECT
+      COALESCE(SUM(ro.receivedAmount-ro.amountCharged), 0) AS pending
+    FROM "RemittanceOrder" ro
+    INNER JOIN "DeliveryOrder" o ON o.id = ro.orderId
+    WHERE o.vendorId IS NOT NULL
+      AND o.status NOT IN ('CANCELLED', 'COMPLETED', 'DELIVERED')
+    `
+        )
+        .get()
 
-    switch (period) {
-      case 'daily':
-        startDate = now.toISOString().split('T')[0] // YYYY-MM-DD
-        return `WHERE date(o.createdAt) = '${startDate}'`
-      case 'weekly':
-        const weekAgo = new Date(now)
-        weekAgo.setDate(now.getDate() - 7)
-        startDate = weekAgo.toISOString().split('T')[0]
-        return `WHERE date(o.createdAt) >= '${startDate}'`
-      case 'monthly':
-        const monthAgo = new Date(now)
-        monthAgo.setMonth(now.getMonth() - 1)
-        startDate = monthAgo.toISOString().split('T')[0]
-        return `WHERE date(o.createdAt) >= '${startDate}'`
+      // =========================
+      // 2. COMPLETED THIS MONTH
+      // =========================
+      const completedThisMonth: any = db
+        .prepare(
+          `
+    SELECT
+      COALESCE(SUM(serviceCharge + additionalCharge), 0) AS total
+    FROM "DeliveryOrder"
+    WHERE vendorId IS NOT NULL
+      AND status IN ('COMPLETED', 'DELIVERED')
+      AND strftime('%Y-%m', createdAt) = strftime('%Y-%m', 'now')
+    `
+        )
+        .get()
+
+      // =========================
+      // 3. SERVICE FEES EARNED
+      // (Client orders only)
+      // =========================
+      const serviceFees: any = db
+        .prepare(
+          `
+    SELECT
+      COALESCE(SUM(serviceCharge + additionalCharge), 0) AS total
+    FROM "DeliveryOrder"
+    WHERE vendorId IS NOT NULL
+      AND status IN ('COMPLETED', 'DELIVERED')
+    `
+        )
+        .get()
+
+      return {
+        totalPending: totalPending.pending ?? 0,
+        completedThisMonth: completedThisMonth.total ?? 0,
+        serviceFees: serviceFees.total ?? 0
+      }
+    } catch (error) {
+      console.error('Accounting metrics error:', error)
+      throw error
     }
-  }
+  })
 
   // --- Income Records ---
   ipcMain.handle('accounting:income', (_, period?: 'daily' | 'weekly' | 'monthly') => {
     try {
-      const dateFilter = getDateFilter(period)
+      // =====================
+      // DATE FILTERS (INLINE)
+      // =====================
+      let orderDateFilter = ''
+      let remittanceDateFilter = ''
 
-      const rows = db
+      switch (period) {
+        case 'daily':
+          orderDateFilter = `AND o.createdAt >= date('now', 'start of day')`
+          remittanceDateFilter = `AND ro.createdAt >= date('now', 'start of day')`
+          break
+        case 'weekly':
+          orderDateFilter = `AND o.createdAt >= date('now', '-6 days')`
+          remittanceDateFilter = `AND ro.createdAt >= date('now', '-6 days')`
+          break
+        case 'monthly':
+          orderDateFilter = `AND o.createdAt >= date('now', 'start of month')`
+          remittanceDateFilter = `AND ro.createdAt >= date('now', 'start of month')`
+          break
+      }
+
+      // =====================
+      // CLIENT ORDERS (NO REMITTANCE)
+      // =====================
+      const clientOrders = db
         .prepare(
           `
-      SELECT 
-        o.id AS orderId,
-        c.fullName AS client,
-        o.serviceCost AS serviceCost,
-        o.additionalCost AS additionalCost,
-        o.deliveryCost AS deliveryCost,
-        r.id AS remittanceId,
-        r.totalCost AS remittanceTotal,
-        r.amountLeft AS remittanceDue,
-        o.createdAt AS orderCreatedAt
+      SELECT
+        o.id                        AS refId,
+        'CLIENT_ORDER'              AS source,
+
+        c.fullName                  AS clientName,
+        NULL                        AS vendorName,
+
+        (o.serviceCharge + o.additionalCharge) AS amountCharged,
+        o.amountReceived            AS paymentReceived,
+
+        o.createdAt                 AS date
       FROM "DeliveryOrder" o
-      LEFT JOIN "Client" c ON o.clientId = c.id
-      LEFT JOIN "RemittanceOrder" ro ON ro.orderId = o.id
-      LEFT JOIN "Remittance" r ON r.id = ro.remittanceId
-      ${dateFilter}
-      ORDER BY o.createdAt DESC
+      LEFT JOIN "Client" c ON c.id = o.clientId
+      WHERE o.vendorId IS NULL
+      ${orderDateFilter}
     `
         )
         .all()
 
+      // =====================
+      // VENDOR REMITTANCE ORDERS
+      // =====================
+      const remittanceOrders = db
+        .prepare(
+          `
+      SELECT
+        o.id                        AS refId,
+        'VENDOR_REMITTANCE'         AS source,
+
+        NULL                        AS clientName,
+        v.companyName               AS vendorName,
+
+        ro.amountCharged            AS amountCharged,
+        ro.receivedAmount           AS paymentReceived,
+
+        ro.createdAt                AS date
+      FROM "RemittanceOrder" ro
+      INNER JOIN "DeliveryOrder" o ON o.id = ro.orderId
+      INNER JOIN "Vendor" v ON v.id = o.vendorId
+      WHERE 1=1
+      ${remittanceDateFilter}
+    `
+        )
+        .all()
+
+      // =====================
+      // MERGE & NORMALIZE
+      // =====================
+      const rows = [...clientOrders, ...remittanceOrders]
+
       return ok(
-        rows.map((row: any) => ({
-          id: row.orderId,
-          orderId: row.orderId,
-          client: row.client,
-          amount: row.serviceCost + row.deliveryCost + row.additionalCost,
-          serviceCost: row.serviceCost,
-          paymentReceived:
-            row.serviceCost + row.deliveryCost + row.additionalCost - (row.remittanceDue || 0),
-          remittanceDue: row.remittanceDue,
-          date: row.orderCreatedAt, // use alias to avoid ambiguity
-          category:
-            row.remittanceTotal && row.remittanceTotal > 100 ? 'VIP Client' : 'Regular Client'
-        }))
+        rows
+          .map((row: any) => {
+            const outstanding = (row.amountCharged || 0) - (row.paymentReceived || 0)
+
+            return {
+              id: row.refId,
+              source: row.source,
+
+              client: row.clientName,
+              vendor: row.vendorName,
+
+              amountCharged: row.amountCharged,
+              paymentReceived: row.paymentReceived,
+              outstanding,
+
+              date: row.date,
+              category: row.amountCharged >= 100_000 ? 'High Value' : 'Standard'
+            }
+          })
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       )
     } catch (error) {
-      return fail(error)
+      console.error(error)
+      return fail('Failed to load income report')
     }
   })
 
@@ -1423,104 +1817,164 @@ app.whenReady().then(() => {
   // --- Summary Metrics ---
   ipcMain.handle('accounting:summary', (_, period?: 'daily' | 'weekly' | 'monthly') => {
     try {
-      // --- Date filters ---
-      let deliveryFilter = ''
-      let expenseFilter = ''
+      /** ============================
+       * DATE FILTERS
+       * ============================ */
+      let orderDateFilter = ''
+      let remittanceDateFilter = ''
+      let expenseDateFilter = ''
 
       switch (period) {
         case 'daily':
-          deliveryFilter = `WHERE o.createdAt >= date('now', 'start of day')`
-          expenseFilter = `WHERE createdAt >= date('now', 'start of day')`
+          orderDateFilter = `AND o.createdAt >= date('now', 'start of day')`
+          remittanceDateFilter = `WHERE ro.createdAt >= date('now', 'start of day')`
+          expenseDateFilter = `WHERE createdAt >= date('now', 'start of day')`
           break
         case 'weekly':
-          deliveryFilter = `WHERE o.createdAt >= date('now', '-6 days')`
-          expenseFilter = `WHERE createdAt >= date('now', '-6 days')`
+          orderDateFilter = `AND o.createdAt >= date('now', '-6 days')`
+          remittanceDateFilter = `WHERE ro.createdAt >= date('now', '-6 days')`
+          expenseDateFilter = `WHERE createdAt >= date('now', '-6 days')`
           break
         case 'monthly':
-          deliveryFilter = `WHERE o.createdAt >= date('now', 'start of month')`
-          expenseFilter = `WHERE createdAt >= date('now', 'start of month')`
+          orderDateFilter = `AND o.createdAt >= date('now', 'start of month')`
+          remittanceDateFilter = `WHERE ro.createdAt >= date('now', 'start of month')`
+          expenseDateFilter = `WHERE createdAt >= date('now', 'start of month')`
           break
         default:
-          deliveryFilter = ''
-          expenseFilter = ''
+          orderDateFilter = ''
+          remittanceDateFilter = ''
+          expenseDateFilter = ''
       }
 
-      // --- Fetch Income Records ---
-      const incomeRecords: any[] = db
+      /** ============================
+       * CLIENT ORDERS (REGULAR)
+       * ============================ */
+      const clientIncome: any[] = db
         .prepare(
           `
-        SELECT 
-          o.serviceCost as serviceCost,
-          o.deliveryCost as deliveryCost,
-          o.additionalCost as additionalCost,
-          r.amountLeft as remittanceDue,
-          o.vendorId as vendorId
-        FROM "DeliveryOrder" o
-        LEFT JOIN "RemittanceOrder" ro ON ro.orderId = o.id
-        LEFT JOIN "Remittance" r ON r.id = ro.remittanceId
-        ${deliveryFilter}
-      `
+          SELECT
+            (o.serviceCharge + o.additionalCharge) AS charged,
+            o.amountReceived                     AS received
+          FROM "DeliveryOrder" o
+          WHERE o.vendorId IS NULL
+          ${orderDateFilter}
+          `
         )
         .all()
 
-      // --- Fetch Expense Records ---
+      /** ============================
+       * VENDOR REMITTANCE (VIP)
+       * ============================ */
+      const vendorIncome: any[] = db
+        .prepare(
+          `
+          SELECT
+            ro.amountCharged AS charged,
+            ro.receivedAmount AS received
+          FROM "RemittanceOrder" ro
+          INNER JOIN "Remittance" r ON r.id = ro.remittanceId
+          ${remittanceDateFilter}
+          `
+        )
+        .all()
+
+      /** ============================
+       * EXPENSES
+       * ============================ */
       const expenseRecords: any[] = db
         .prepare(
           `
-        SELECT type, amount
-        FROM "Expense"
-        ${expenseFilter}
-      `
+          SELECT type, amount
+          FROM "Expense"
+          ${expenseDateFilter}
+          `
         )
         .all()
 
-      // --- Income Breakdown ---
-      const vipIncome = incomeRecords
-        .filter((r) => r.vendorId)
-        .reduce((sum, r) => sum + (r.serviceCost + r.deliveryCost + r.additionalCost), 0)
+      /** ============================
+       * INCOME CALCULATION
+       * ============================ */
+      let regularCharged = 0
+      let regularReceived = 0
+      let regularPending = 0
 
-      const regularIncome = incomeRecords
-        .filter((r) => !r.vendorId)
-        .reduce((sum, r) => sum + (r.serviceCost + r.deliveryCost + r.additionalCost), 0)
+      for (const r of clientIncome) {
+        const charged = r.charged || 0
+        const received = r.received || 0
 
-      const totalIncome = vipIncome + regularIncome
+        regularCharged += charged
+        regularReceived += received
+        regularPending += charged - received
+      }
 
-      // --- Expense Breakdown ---
+      let vipCharged = 0
+      let vipReceived = 0
+      let vipPending = 0
+
+      for (const r of vendorIncome) {
+        const charged = r.charged || 0
+        const received = r.received || 0
+
+        vipCharged += charged
+        vipReceived += received
+        vipPending += charged - received
+      }
+
+      const totalCharged = regularCharged + vipCharged
+      const totalReceived = regularReceived + vipReceived
+      const totalPending = regularPending + vipPending
+
+      /** ============================
+       * EXPENSE BREAKDOWN
+       * ============================ */
       const expenseTypes: Record<string, number> = {}
       let totalExpenses = 0
+
       for (const exp of expenseRecords) {
         expenseTypes[exp.type] = (expenseTypes[exp.type] || 0) + exp.amount
         totalExpenses += exp.amount
       }
 
-      // --- Profit & Loss ---
-      const totalRemittancePending = incomeRecords.reduce(
-        (sum, r) => sum + (r.remittanceDue || 0),
-        0
-      )
-      const profit = totalIncome - totalExpenses
+      /** ============================
+       * PROFIT (CASH BASIS)
+       * ============================ */
+      const profit = totalReceived - totalExpenses
 
-      // --- Return Data ---
+      /** ============================
+       * RETURN SUMMARY
+       * ============================ */
       return ok({
         incomeBreakdown: {
-          vip: vipIncome,
-          regular: regularIncome,
-          total: totalIncome
+          vip: {
+            charged: vipCharged,
+            received: vipReceived,
+            pending: vipPending
+          },
+          regular: {
+            charged: regularCharged,
+            received: regularReceived,
+            pending: regularPending
+          },
+          totals: {
+            charged: totalCharged,
+            received: totalReceived,
+            pending: totalPending
+          }
         },
         expenseBreakdown: {
           byType: expenseTypes,
           total: totalExpenses
         },
         profitLoss: {
-          totalIncome,
+          totalReceived,
           totalExpenses,
           profit,
-          totalRemittancePending
+          outstanding: totalPending
         }
       })
     } catch (error) {
       console.error('Error fetching summary:', error)
-      return fail(error)
+      return fail('Failed to load accounting summary')
     }
   })
 

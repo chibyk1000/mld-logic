@@ -47,6 +47,7 @@ export function OrdersList() {
     try {
       const list = await window.api.listDeliveryOrders()
       const agentList = await window.api.listAgents()
+console.log(list);
 
       setAgents(agentList.data)
       setOrders(list.data)
@@ -134,7 +135,8 @@ export function OrdersList() {
                   <th className="px-6 py-3 text-left">Client</th>
                   <th className="px-6 py-3 text-left">Status</th>
                   <th className="px-6 py-3 text-left">Agent</th>
-                  <th className="px-6 py-3 text-left">Cost</th>
+                  <th className="px-6 py-3 text-left">Amount</th>
+                  <th className="px-6 py-3 text-left">Charge</th>
                   <th className="px-6 py-3 text-left">Actions</th>
                 </tr>
               </thead>
@@ -142,7 +144,7 @@ export function OrdersList() {
               <tbody>
                 {filteredOrders.map((order) => {
                   const orderNumber = `ORD-${order.id.slice(0, 6).toUpperCase()}`
-                  const clientName = order.client?.name || order.vendor?.companyName || 'Unknown'
+                  const clientName = order.client?.fullName || order.vendor?.companyName || 'Unknown'
 
                   return (
                     <tr key={order.id} className="border-b hover:bg-muted/50">
@@ -179,7 +181,10 @@ export function OrdersList() {
                         </Select>
                       </td>
 
-                      <td className="px-6 py-4">₦{order.serviceCost + order.deliveryCost + order.additionalCost}</td>
+                      <td className="px-6 py-4">₦{order.amountReceived}</td>
+                      <td className="px-6 py-4">
+                        ₦{order.serviceCharge  + order.additionalCharge}
+                      </td>
 
                       <td className="px-6 py-4">
                         <DropdownMenu>
@@ -190,10 +195,10 @@ export function OrdersList() {
                           </DropdownMenuTrigger>
 
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEditClick(order)}>
+                            {/* <DropdownMenuItem onClick={() => handleEditClick(order)}>
                               <Edit2 className="mr-2 h-4 w-4" />
                               Edit Order
-                            </DropdownMenuItem>
+                            </DropdownMenuItem> */}
 
                             <DropdownMenuItem
                               onClick={() => handleDeleteClick(order.id)}

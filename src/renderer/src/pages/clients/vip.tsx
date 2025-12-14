@@ -17,7 +17,7 @@ import {
   TableRow
 } from '@renderer/components/ui/table'
 import { Badge } from '@renderer/components/ui/badge'
-import { Plus, Package, DollarSign, TrendingUp, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Package, DollarSign, TrendingUp, Pencil, Trash2, PackagePlus } from 'lucide-react'
 
 import { VIPClientForm } from '@renderer/components/VipClientForm'
 import { VIPClientEditForm } from '@renderer/components/VipEditForm'
@@ -206,13 +206,12 @@ console.log(clients);
 const payload = {
   vendorId: orderData.client,
   warehouseId: orderData.warehouse,
-  productId: orderData.product,
+  productIds: orderData.products,
   quantity: orderData.quantity,
-  deliveryCost: Number(orderData.deliveryCost),
-  serviceCost: Number(orderData.serviceCost),
-  additionalCost: Number(orderData.additionalCost),
+  serviceCharge: Number(orderData.serviceCharge),
+  additionalCharge: Number(orderData.additionalCharge),
   collectPayment: orderData.collectPayment,
- 
+  amountReceived: Number(orderData.amountReceived),
   pickupContactName: orderData.pickupContactName,
   pickupContactPhone: orderData.pickupContactPhone,
   pickupInstructions: orderData.pickupInstructions,
@@ -220,7 +219,7 @@ const payload = {
   deliveryContactPhone: orderData.deliveryContactPhone,
   deliveryInstructions: orderData.deliveryInstructions,
   deliveryAddress: orderData.deliveryAddress,
-  sensitivity: orderData.sensitivity
+
 } as any
                     
                 
@@ -349,7 +348,7 @@ const payload = {
                       onClick={() => openAddProductDialog(client)}
                       title="Add Product"
                     >
-                      <Package className="h-4 w-4" />
+                      <PackagePlus className="h-4 w-4" />
                     </Button>
 
                     {/* Edit */}

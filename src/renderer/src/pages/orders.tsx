@@ -77,11 +77,7 @@ const ORDER_STATUSES = ['pending', 'in-progress', 'delivered', 'cancelled'] as c
       loadOrders()
     }, [])
 
-    // const handleEditClick = (order: any) => {
-    //   setSelectedOrder(order)
-    //   setIsEditModalOpen(true)
-    // }
-
+ 
       const handleDeleteClick = async (id: string) => {
         console.log(id);
         

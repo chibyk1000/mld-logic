@@ -4,6 +4,21 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { db } from './db'
 import bcrypt from 'bcryptjs'
+
+import fs from 'fs'
+import path from 'path'
+
+import { Parser } from 'json2csv'
+import ExcelJS from 'exceljs'
+
+
+
+const EXPORT_DIR = path.join(app.getPath('documents'), 'Mdl-logistics-data')
+
+if (!fs.existsSync(EXPORT_DIR)) {
+  fs.mkdirSync(EXPORT_DIR, { recursive: true })
+}
+
 import crypto from 'crypto'
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -66,6 +81,96 @@ app.whenReady().then(() => {
       return fail('Failed to fetch users')
     }
   })
+
+  ipcMain.handle('export:csv', async (_, tableName: string) => {
+    try {
+      const rows = db.prepare(`SELECT * FROM "${tableName}"`).all()
+
+      if (!rows.length) {
+        return { error: 'No data to export' }
+      }
+
+      const parser = new Parser()
+      const csv = parser.parse(rows)
+
+      const filePath = path.join(EXPORT_DIR, `${tableName}-${Date.now()}.csv`)
+      fs.writeFileSync(filePath, csv)
+
+      return { path: filePath }
+    } catch (err) {
+      console.error(err)
+      return { error: 'Failed to export CSV' }
+    }
+  })
+
+  ipcMain.handle('export:excel', async (_, tableName: string) => {
+    try {
+      const rows:any = db.prepare(`SELECT * FROM "${tableName}"`).all()
+
+      if (!rows.length) {
+        return { error: 'No data to export' }
+      }
+
+      const workbook = new ExcelJS.Workbook()
+      const sheet = workbook.addWorksheet(tableName)
+
+      sheet.columns = Object.keys(rows[0]).map((key) => ({
+        header: key,
+        key,
+        width: 20
+      }))
+
+      rows.forEach((row) => sheet.addRow(row))
+
+      const filePath = path.join(EXPORT_DIR, `${tableName}-${Date.now()}.xlsx`)
+      await workbook.xlsx.writeFile(filePath)
+
+      return { path: filePath }
+    } catch (err) {
+      console.error(err)
+      return { error: 'Failed to export Excel' }
+    }
+  })
+ipcMain.handle('export:sql', async () => {
+  try {
+    const tables:any = db
+      .prepare(
+        `
+        SELECT name FROM sqlite_master 
+        WHERE type='table' AND name NOT LIKE 'sqlite_%'
+      `
+      )
+      .all()
+
+    let sqlDump = 'BEGIN TRANSACTION;\n\n'
+
+    for (const { name } of tables) {
+      const rows:any = db.prepare(`SELECT * FROM "${name}"`).all()
+
+      for (const row of rows) {
+        const columns = Object.keys(row).join(', ')
+        const values = Object.values(row)
+          .map((v) => (v === null ? 'NULL' : `'${String(v).replace(/'/g, "''")}'`))
+          .join(', ')
+
+        sqlDump += `INSERT INTO "${name}" (${columns}) VALUES (${values});\n`
+      }
+
+      sqlDump += '\n'
+    }
+
+    sqlDump += 'COMMIT;'
+
+    const filePath = path.join(EXPORT_DIR, `backup-${Date.now()}.sql`)
+    fs.writeFileSync(filePath, sqlDump)
+
+    return { path: filePath }
+  } catch (err) {
+    console.error(err)
+    return { error: 'Failed to export SQL' }
+  }
+})
+
 
   // -------------------- CREATE USER --------------------
   ipcMain.handle('users:create', async (_, { email, password }) => {
@@ -1121,6 +1226,50 @@ ipcMain.handle(
     } catch (err) {
       console.log(err)
       return fail('Failed to create order')
+    }
+  })
+
+
+
+  ipcMain.handle('orders:update-status', async (_, orderId: string, status: string) => {
+    try {
+      if (!orderId || !status) {
+        return fail('Order ID and status are required')
+      }
+
+      const normalizedStatus = status.toUpperCase()
+
+      const ALLOWED_STATUSES = ['PENDING', 'IN-PROGRESS', 'DELIVERED', 'CANCELLED']
+
+      if (!ALLOWED_STATUSES.includes(normalizedStatus)) {
+        return fail('Invalid order status')
+      }
+
+      // Check order exists
+      const order: any = db.prepare(`SELECT * FROM "DeliveryOrder" WHERE id = ?`).get(orderId)
+
+      if (!order) {
+        return fail('Order not found')
+      }
+
+      // Optional: block illegal transitions
+      if (['COMPLETED', 'CANCELLED'].includes(order.status)) {
+        return fail('Cannot change status of completed or cancelled orders')
+      }
+
+      // Update status
+      db.prepare(
+        `UPDATE "DeliveryOrder"
+       SET status = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE id = ?`
+      ).run(normalizedStatus, orderId)
+
+      const updatedOrder = db.prepare(`SELECT * FROM "DeliveryOrder" WHERE id = ?`).get(orderId)
+
+      return ok(updatedOrder)
+    } catch (err) {
+      console.error(err)
+      return fail('Failed to update order status')
     }
   })
 

@@ -28,7 +28,7 @@ export default function Dashboard() {
     loadClients()
   },[])
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 overflow-hidden">
       {/* Header */}
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Dashboard Overview</h2>

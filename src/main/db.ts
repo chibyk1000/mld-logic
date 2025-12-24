@@ -2,6 +2,8 @@ import 'dotenv/config'
 import Database from 'better-sqlite3'
 import path from 'path'
 
+
+
 const dbPath =
   process.env.NODE_ENV === 'development'
     ? './data.db'

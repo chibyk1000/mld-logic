@@ -1,13 +1,49 @@
 import { useNavigate } from "react-router-dom";
 import Logo from "../assets/logo.jpeg"
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@renderer/components/ui/dialog";
 
 const Login = () => {
  const navigate = useNavigate()
  const [username, setUsername] = useState('')
  const [password, setPassword] = useState('')
  const [loading, setLoading] = useState(false)
- const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+const [users, setUsers] = useState<any[]>([])
+const [showCreateModal, setShowCreateModal] = useState(false)
+const [checkingUsers, setCheckingUsers] = useState(true)
+
+  
+useEffect(() => {
+  const getUsers = async () => {
+    try {
+      const res = await window.api.getUsers()
+      const usersFromDb = res.data ?? []
+
+      setUsers(usersFromDb)
+
+      // 👉 No user exists → show create account modal
+      if (usersFromDb.length === 0) {
+        setShowCreateModal(true)
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setCheckingUsers(false)
+    }
+  }
+
+  getUsers()
+}, [])
+
+  
+  if (checkingUsers) {
+    return (
+      <div className="grid min-h-screen place-items-center">
+        <p>Checking account…</p>
+      </div>
+    )
+  }
 
  const onSubmit = async (e: React.FormEvent) => {
    e.preventDefault()
@@ -15,21 +51,10 @@ const Login = () => {
    setError(null)
 
    try {
-     // Try login first
-     let loginResult = await window.api.loginUser(username, password)
 
-     // If error, create user and login
-     if ('error' in loginResult) {
-       const createResult = await window.api.createUser(username, password)
+ await window.api.loginUser(username, password)
 
-       if ('error' in createResult) {
-         setError(createResult.error)
-         setLoading(false)
-         return
-       }
 
-       loginResult = createResult
-     }
 
      // Successfully logged in
      navigate('/dashboard')
@@ -43,6 +68,71 @@ const Login = () => {
 
     return (
       <div className="grid min-h-screen place-items-center">
+        <Dialog
+          open={showCreateModal}
+          onOpenChange={(open) => {
+            // prevent closing if no users exist
+            if (users.length === 0) return
+            setShowCreateModal(open)
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Create Admin Account</DialogTitle>
+              <DialogDescription>
+                No user found. Create the first account to continue.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form
+              className="mt-4 space-y-4"
+              onSubmit={async (e) => {
+                e.preventDefault()
+                setLoading(true)
+                setError(null)
+
+                const res = await window.api.createUser(username, password)
+
+                if ('error' in res) {
+                  setError(res.error)
+                  setLoading(false)
+                  return
+                }
+
+                setShowCreateModal(false)
+                navigate('/dashboard')
+              }}
+            >
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Username"
+                className="w-full rounded-md border px-3 py-2"
+                required
+              />
+
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                className="w-full rounded-md border px-3 py-2"
+                required
+              />
+
+              {error && <p className="text-sm text-red-500">{error}</p>}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-md bg-primary py-2 text-white"
+              >
+                {loading ? 'Creating…' : 'Create Account'}
+              </button>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         <div
           className="flex flex-col justify-center w-full max-w-80 rounded-xl px-6 py-8 
   border bg-white text-slate-900 text-sm 

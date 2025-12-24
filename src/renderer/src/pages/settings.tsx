@@ -10,7 +10,18 @@ import { Download } from 'lucide-react'
 import { toast } from 'react-toastify'
 
 
-type ExportFormat = 'json' | 'csv'
+type ExportFormat = 'json' | 'csv' | 'excel' | 'sql'
+
+const EXPORT_FORMATS: {
+  id: ExportFormat
+  label: string
+  description: string
+}[] = [
+  { id: 'json', label: 'JSON', description: 'Structured raw data' },
+  { id: 'csv', label: 'CSV', description: 'Spreadsheet-friendly format' },
+  { id: 'excel', label: 'Excel (.xlsx)', description: 'Multi-sheet workbook' },
+  { id: 'sql', label: 'SQL Backup', description: 'Full database backup' }
+]
 
 const EXPORT_OPTIONS = [
   { id: 'orders', label: 'Orders Data', description: 'All order records' },
@@ -49,6 +60,48 @@ const [orders, setOrders] = useState<any[]>([])
       newSelected.add(id)
     }
     setSelectedItems(newSelected)
+  }
+
+  const handleExport = async () => {
+    if (selectedItems.size === 0) {
+      toast.error('Select at least one item to export')
+      return
+    }
+
+    setIsExporting(true)
+
+    try {
+      // Lightweight exports (browser-side)
+      if (exportFormat === 'json') {
+        exportAsJSON()
+        toast.success('JSON export completed')
+        return
+      }
+
+      if (exportFormat === 'csv') {
+        exportAsCSV()
+        toast.success('CSV export completed')
+        return
+      }
+
+      // Heavy exports (Electron-side)
+      if (exportFormat === 'excel') {
+        const res = await window.api.exportExcel('DeliveryOrder')
+        if (res?.path) toast.success('Excel file exported')
+        return
+      }
+
+      if (exportFormat === 'sql') {
+        const res = await window.api.exportSQL()
+        if (res?.path) toast.success('SQL backup created')
+        return
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Export failed')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const generateSummary = () => {
@@ -152,18 +205,23 @@ const [orders, setOrders] = useState<any[]>([])
       setIsExporting(false)
     }, 500)
   }
-
-  const handleExport = () => {
-    if (selectedItems.size === 0) {
-      alert('Please select at least one item to export')
-      return
-    }
-    if (exportFormat === 'json') {
-      exportAsJSON()
-    } else {
-      exportAsCSV()
-    }
+useEffect(() => {
+  if (exportFormat === 'sql') {
+    setSelectedItems(new Set(['orders']))
   }
+}, [exportFormat])
+
+  // const handleExport = () => {
+  //   if (selectedItems.size === 0) {
+  //     alert('Please select at least one item to export')
+  //     return
+  //   }
+  //   if (exportFormat === 'json') {
+  //     exportAsJSON()
+  //   } else {
+  //     exportAsCSV()
+  //   }
+  // }
 
   return (
     <div className="space-y-6">
@@ -208,29 +266,30 @@ const [orders, setOrders] = useState<any[]>([])
           {/* Format Selection */}
           <div className="space-y-3 border-t pt-6">
             <h3 className="font-semibold text-foreground">Export Format</h3>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="format"
-                  value="json"
-                  checked={exportFormat === 'json'}
-                  onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
-                  className="w-4 h-4"
-                />
-                <span className="text-foreground">JSON</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="format"
-                  value="csv"
-                  checked={exportFormat === 'csv'}
-                  onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
-                  className="w-4 h-4"
-                />
-                <span className="text-foreground">CSV</span>
-              </label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {EXPORT_FORMATS.map((format) => (
+                <label
+                  key={format.id}
+                  className={`flex cursor-pointer flex-col rounded-lg border p-4 transition
+        ${
+          exportFormat === format.id
+            ? 'border-primary bg-primary/5'
+            : 'border-muted hover:bg-muted/50'
+        }`}
+                >
+                  <input
+                    type="radio"
+                    name="format"
+                    value={format.id}
+                    checked={exportFormat === format.id}
+                    onChange={() => setExportFormat(format.id)}
+                    className="hidden"
+                  />
+
+                  <span className="font-medium">{format.label}</span>
+                  <span className="text-xs text-muted-foreground">{format.description}</span>
+                </label>
+              ))}
             </div>
           </div>
 

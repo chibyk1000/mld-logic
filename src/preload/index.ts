@@ -18,10 +18,8 @@ const api = {
   // WAREHOUSE
   // -----------------------------
   listWarehouses: () => ipcRenderer.invoke('warehouses:list'),
-listWarehouseProducts: (warehouseId: string) =>
-  ipcRenderer.invoke('warehouse:listProducts', warehouseId)
-,
-
+  listWarehouseProducts: (warehouseId: string) =>
+    ipcRenderer.invoke('warehouse:listProducts', warehouseId),
   createWarehouse: (data: {
     name: string
     location: string
@@ -150,6 +148,11 @@ listWarehouseProducts: (warehouseId: string) =>
     cost: number
   }) => ipcRenderer.invoke('orders:create', data),
   createClientDeliveryOrder: (data: any) => ipcRenderer.invoke('orders:client_create', data),
+  exportCSV: (table: string) => ipcRenderer.invoke('export:csv', table),
+
+  exportExcel: (table: string) => ipcRenderer.invoke('export:excel', table),
+
+  exportSQL: () => ipcRenderer.invoke('export:sql'),
 
   updateDeliveryOrder: (id: string, data: any) => ipcRenderer.invoke('orders:update', { id, data }),
 
@@ -157,7 +160,7 @@ listWarehouseProducts: (warehouseId: string) =>
     ipcRenderer.invoke('orders:assignAgent', { orderId, agentId }),
 
   updateDeliveryStatus: (orderId: string, status: string) =>
-    ipcRenderer.invoke('orders:status', { orderId, status }),
+    ipcRenderer.invoke('orders:update-status', orderId, status),
 
   deleteDeliveryOrder: (id: string) => ipcRenderer.invoke('orders:delete', { id }),
 

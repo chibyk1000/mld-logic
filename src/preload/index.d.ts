@@ -115,6 +115,9 @@ declare global {
         cost: number
       }) => Promise<any>
       createClientDeliveryOrder: (data: any) => Promise<any>
+      exportCSV: (table: string) => Promise<any>
+      exportExcel: (table: string) => Promise<any>
+      exportSQL: () => Promise<any>
       listWarehouseProducts: (id: string) => Promise<any>
       updateDeliveryOrder: (id: string, data: any) => Promise<any>
       transferStock: (data: any) => Promise<any>

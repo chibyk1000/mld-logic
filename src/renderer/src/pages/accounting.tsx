@@ -24,23 +24,25 @@ import {
 } from '@renderer/components/ui/select'
 import dayjs from 'dayjs'
 
-
 export default function Accounting() {
   const [incomeRecords, setIncomeRecords] = useState<any[]>([])
   const [expenseRecords, setExpenseRecords] = useState<any[]>([])
   const [incomeFormOpen, setIncomeFormOpen] = useState(false)
+  const [incomeSearch, setIncomeSearch] = useState('')
+
+  const [incomePage, setIncomePage] = useState(1)
+  const [expensePage, setExpensePage] = useState(1)
+  const pageSize = 10 // you can adjust the number of rows per page
+
   const [expenseFormOpen, setExpenseFormOpen] = useState(false)
   const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly'>('monthly')
-const [summary, setSummary] = useState<any>(null)
+  const [summary, setSummary] = useState<any>(null)
   const fetchData = async () => {
     try {
       const incomes = await window.api.getIncomeRecords(period)
       const expenses = await window.api.getExpenseRecords(period)
       const summary = await window.api.getAccountingSummary(period)
       setSummary(summary.data)
-   
-   
-    
       setIncomeRecords(incomes.data || [])
       setExpenseRecords(expenses || [])
     } catch (err) {
@@ -48,9 +50,6 @@ const [summary, setSummary] = useState<any>(null)
     }
   }
 
-
-
-  
   useEffect(() => {
     fetchData()
   }, [period])
@@ -62,6 +61,9 @@ const [summary, setSummary] = useState<any>(null)
   const totalRemittancePending = incomeRecords
     .filter((record) => record.outstanding)
     .reduce((sum, record) => sum + (Math.abs(record.outstanding) || 0), 0)
+  const filteredIncomeRecords = incomeRecords.filter((record) =>
+    (record.client || record.vendor)?.toLowerCase().includes(incomeSearch.toLowerCase())
+  )
 
   return (
     <div className="space-y-6">
@@ -139,6 +141,19 @@ const [summary, setSummary] = useState<any>(null)
               </Button> */}
             </CardHeader>
             <CardContent>
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search by client or vendor..."
+                  value={incomeSearch}
+                  onChange={(e) => {
+                    setIncomeSearch(e.target.value)
+                    setIncomePage(1) // reset to first page on search
+                  }}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -153,30 +168,50 @@ const [summary, setSummary] = useState<any>(null)
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {incomeRecords.map((record) => (
-                    <TableRow key={record.id}>
-                      {/* <TableCell className="font-medium">{record.orderId}</TableCell> */}
-                      <TableCell>{record.client || record.vendor}</TableCell>
-                      <TableCell>
-                        <Badge variant={record.category.includes('VIP') ? 'default' : 'secondary'}>
-                          {record.category}
-                        </Badge>
-                      </TableCell>
-
-                      <TableCell className="text-right">
-                        {record.paymentReceived ? `₦${record.paymentReceived}` : '-'}
-                      </TableCell>
-                      <TableCell className="text-center">₦{record.amountCharged}</TableCell>
-                      <TableCell className="text-center">
-                        {record.vendor && (
-                          <>{record.outstanding ? `₦${record.outstanding}` : '-'}</>
-                        )}
-                      </TableCell>
-                      <TableCell>{dayjs(record.date).format('YYYY MMMM, DD')}</TableCell>
-                    </TableRow>
-                  ))}
+                  {filteredIncomeRecords
+                    .slice((incomePage - 1) * pageSize, incomePage * pageSize)
+                    .map((record) => (
+                      <TableRow key={record.id}>
+                        <TableCell>{record.client || record.vendor}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={record.category.includes('VIP') ? 'default' : 'secondary'}
+                          >
+                            {record.category}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {record.paymentReceived ? `₦${record.paymentReceived}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-center">₦{record.amountCharged}</TableCell>
+                        <TableCell className="text-center">
+                          {record.vendor && (record.outstanding ? `₦${record.outstanding}` : '-')}
+                        </TableCell>
+                        <TableCell>{dayjs(record.date).format('YYYY MMMM, DD')}</TableCell>
+                      </TableRow>
+                    ))}
                 </TableBody>
               </Table>
+
+              <div className="flex justify-between items-center mt-2">
+                <Button
+                  size="sm"
+                  disabled={incomePage === 1}
+                  onClick={() => setIncomePage((prev) => prev - 1)}
+                >
+                  Previous
+                </Button>
+                <span>
+                  Page {incomePage} of {Math.ceil(filteredIncomeRecords.length / pageSize)}
+                </span>
+                <Button
+                  size="sm"
+                  disabled={incomePage === Math.ceil(filteredIncomeRecords.length / pageSize)}
+                  onClick={() => setIncomePage((prev) => prev + 1)}
+                >
+                  Next
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -201,18 +236,42 @@ const [summary, setSummary] = useState<any>(null)
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {expenseRecords.map((record) => (
-                    <TableRow key={record.id}>
-                      <TableCell>
-                        <Badge variant="outline">{record.type}</Badge>
-                      </TableCell>
-                      <TableCell>{record.description}</TableCell>
-                      <TableCell className="text-right font-medium">₦{record.amount}</TableCell>
-                      <TableCell>{dayjs(record.date).format('YYYY MMMM, DD')}</TableCell>
-                    </TableRow>
-                  ))}
+                  <TableBody>
+                    {expenseRecords
+                      .slice((expensePage - 1) * pageSize, expensePage * pageSize)
+                      .map((record) => (
+                        <TableRow key={record.id}>
+                          <TableCell>
+                            <Badge variant="outline">{record.type}</Badge>
+                          </TableCell>
+                          <TableCell>{record.description}</TableCell>
+                          <TableCell className="text-right font-medium">₦{record.amount}</TableCell>
+                          <TableCell>{dayjs(record.date).format('YYYY MMMM, DD')}</TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
                 </TableBody>
               </Table>
+
+              <div className="flex justify-between items-center mt-2">
+                <Button
+                  size="sm"
+                  disabled={expensePage === 1}
+                  onClick={() => setExpensePage((prev) => prev - 1)}
+                >
+                  Previous
+                </Button>
+                <span>
+                  Page {expensePage} of {Math.ceil(expenseRecords.length / pageSize)}
+                </span>
+                <Button
+                  size="sm"
+                  disabled={expensePage === Math.ceil(expenseRecords.length / pageSize)}
+                  onClick={() => setExpensePage((prev) => prev + 1)}
+                >
+                  Next
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -241,8 +300,7 @@ const [summary, setSummary] = useState<any>(null)
                   <div className="flex justify-between items-center p-3 bg-primary/10 rounded-lg">
                     <span className="font-medium text-foreground">Total Income</span>
                     <span className="font-bold text-success">
-                      ₦{summary?.incomeBreakdown?.totals.received
-.toLocaleString()}
+                      ₦{summary?.incomeBreakdown?.totals.received.toLocaleString()}
                     </span>
                   </div>
                 </CardContent>

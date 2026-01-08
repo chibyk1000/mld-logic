@@ -60,6 +60,7 @@ declare global {
       // -----------------------------
       listVendors: () => Promise<any>
       getVendorStats: () => Promise<any>
+      getVendorSummary: (vendorId: string) => Promise<any>
       createVendor: (data: {
         companyName: string
         contactName?: string
@@ -85,6 +86,7 @@ declare global {
         description?: string
       }) => Promise<any>
       updateProduct: (id: string, data: any) => Promise<any>
+      importDatabase: (name: string, buffer: any) => Promise<any>
       deleteProduct: (id: string) => Promise<any>
       getProduct: (id: string) => Promise<any>
 
@@ -98,6 +100,7 @@ declare global {
         productId: string
         quantity: number
       }) => Promise<any>
+      updateInventoryQuanity: (data: { inventoryId: string; quantity: number }) => Promise<any>
       updateInventory: (id: string, quantity: number) => Promise<any>
       deleteInventory: (id: string) => Promise<any>
       getInventory: (id: string) => Promise<any>

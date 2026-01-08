@@ -32,6 +32,12 @@ export default function Remittance() {
   const [openCreateModal, setOpenCreateModal] = useState(false)
   const [selectedRemittance, setSelectedRemittance] = useState<any>(null)
   const [summary, setSummary] = useState<any>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'PAID' | 'PENDING'>('all')
+  const [balanceFilter, setBalanceFilter] = useState<'all' | 'due'>('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 5 // Number of rows per page
+
   const [newRemittance, setNewRemittance] = useState({
     clientId: '',
     periodStart: dayjs().format('YYYY-MM-DD'),
@@ -39,16 +45,13 @@ export default function Remittance() {
     selectedOrders: [] as any[]
   })
 
-  
-
   const loadRemittance = async () => {
     try {
       const list = await window.api.listRemittances()
-      
-         const summary = await window.api.getRemittanceMetrics()
-         setSummary(summary)
-    
-      
+
+      const summary = await window.api.getRemittanceMetrics()
+      setSummary(summary)
+
       setRemittance(list.data)
     } catch (err) {
       console.error(err)
@@ -91,6 +94,9 @@ export default function Remittance() {
       toast.error('Failed to mark remittance as paid')
     }
   }
+useEffect(() => {
+  setCurrentPage(1)
+}, [searchQuery])
 
   const createRemittance = async () => {
     if (!newRemittance.clientId || newRemittance.selectedOrders.length === 0) {
@@ -118,6 +124,20 @@ export default function Remittance() {
       toast.error('Failed to create remittance')
     }
   }
+  const filteredRemittances = remittances.filter((r) => {
+    const query = searchQuery.toLowerCase()
+
+    const name = (r.clientName || r.vendorName || '').toLowerCase()
+
+    const matchesSearch = name.includes(query)
+
+    const matchesStatus = statusFilter === 'all' ? true : r.status === statusFilter
+
+    const matchesBalance = balanceFilter === 'all' ? true : Number(r.amountLeft) > 0
+
+    return matchesSearch && matchesStatus && matchesBalance
+  })
+const paginatedRemittaance = filteredRemittances.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   return (
     <div className="space-y-6">
@@ -138,10 +158,15 @@ export default function Remittance() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard title="Total Pending" value={summary?.totalPending} icon={Clock} variant="warning" />
+        <MetricCard
+          title="Total Pending"
+          value={summary?.totalPending}
+          icon={Clock}
+          variant="warning"
+        />
         <MetricCard
           title="Completed This Month"
-          value={summary?.completedThisMonth }
+          value={summary?.completedThisMonth}
           icon={CheckCircle}
           variant="success"
         />
@@ -159,6 +184,39 @@ export default function Remittance() {
           <CardTitle>Remittances</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-col md:flex-row gap-4 mb-4">
+            {/* Search */}
+            <Input
+              placeholder="Search client or vendor..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="md:max-w-sm"
+            />
+
+            {/* Status Filter */}
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+              <SelectTrigger className="md:w-[180px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="PAID">Paid</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Balance Filter */}
+            <Select value={balanceFilter} onValueChange={(v) => setBalanceFilter(v as any)}>
+              <SelectTrigger className="md:w-[220px]">
+                <SelectValue placeholder="Balance" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Remittances</SelectItem>
+                <SelectItem value="due">Outstanding Only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <Table>
             <TableHeader>
               <TableRow>
@@ -168,14 +226,21 @@ export default function Remittance() {
                 <TableHead className="text-right">Service Cost</TableHead>
                 {/* <TableHead className="text-right">Total Cost</TableHead> */}
                 <TableHead className="text-right">Remittance Due</TableHead>
-                
+
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {remittances.map((remittance) => {
-               
+              {paginatedRemittaance.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
+                    No remittances found
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {paginatedRemittaance.map((remittance) => {
                 return (
                   <TableRow key={remittance.id}>
                     <TableCell className="font-medium">
@@ -217,6 +282,27 @@ export default function Remittance() {
               })}
             </TableBody>
           </Table>
+          <div className="flex justify-between items-center mt-2">
+            <Button
+              size="sm"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((prev) => prev - 1)}
+            >
+              Previous
+            </Button>
+
+            <span>
+              Page {currentPage} of {Math.ceil(filteredRemittances.length / pageSize)}
+            </span>
+
+            <Button
+              size="sm"
+              disabled={currentPage === Math.ceil(filteredRemittances.length / pageSize)}
+              onClick={() => setCurrentPage((prev) => prev + 1)}
+            >
+              Next
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

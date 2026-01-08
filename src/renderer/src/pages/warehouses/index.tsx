@@ -48,6 +48,8 @@ const warehouseSchema = yup.object({
 type WarehouseFormValues = yup.InferType<typeof warehouseSchema>
 export default function WarehouseList() {
   const [warehouses, setWarehouses] = useState<any[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'full'>('all')
 
   const [openView, setOpenView] = useState(false)
   const [selectedWarehouse, setSelectedWarehouse] = useState<any>(null)
@@ -72,18 +74,18 @@ export default function WarehouseList() {
   const [selectedDestinationWarehouse, setSelectedDestinationWarehouse] = useState<string | null>(
     null
   )
- 
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(10) // Number of warehouses per page
+
   const [transferNote, setTransferNote] = useState('')
 
   // Fetch products from the selected source warehouse
   useEffect(() => {
     const fetchProducts = async () => {
-
       if (!selectedSourceWarehouse) return
       try {
         const result = await window.api.listWarehouseProducts(selectedSourceWarehouse)
-       
-        
+
         setTransferProducts(result.data)
       } catch (err) {
         console.error('Failed to fetch products:', err)
@@ -95,7 +97,7 @@ export default function WarehouseList() {
 
   const handleStockTransfer = async () => {
     console.log(selectedSourceWarehouse, selectedDestinationWarehouse, selectedProducts)
-    
+
     if (!selectedSourceWarehouse || !selectedDestinationWarehouse || selectedProducts.length <= 0) {
       toast.error('Please fill all fields with valid values.')
       return
@@ -118,7 +120,7 @@ export default function WarehouseList() {
       setOpenTransfer(false)
       setSelectedSourceWarehouse(null)
       setSelectedDestinationWarehouse(null)
-    
+
       setTransferNote('')
     } catch (err) {
       console.error('Failed to transfer stock:', err)
@@ -149,13 +151,15 @@ export default function WarehouseList() {
       console.error('Failed to add warehouse:', err)
     }
   }
+useEffect(() => {
+  setCurrentPage(1)
+}, [searchQuery, statusFilter])
 
   const handleSubmitEdit = async (data: any) => {
     try {
       // Call the Electron IPC handler
 
       const result = await window.api.updateWarehouse(selectedWarehouse.id, data)
-
 
       if (result.error) {
         // Handle error from main process
@@ -230,7 +234,25 @@ export default function WarehouseList() {
           warehouses.length) *
         100
       : 0
-console.log("tran",transferProducts, selectedSourceWarehouse);
+
+  const filteredWarehouses = warehouses.filter((wh) => {
+    const matchesSearch =
+      wh.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      wh.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      wh.status.toLowerCase().includes(searchQuery.toLowerCase())
+
+    const matchesStatus = statusFilter === 'all' ? true : wh.status === statusFilter
+
+    return matchesSearch && matchesStatus
+  })
+
+  const totalPages = Math.ceil(filteredWarehouses.length / itemsPerPage)
+
+  const paginatedWarehouses = filteredWarehouses.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  )
+
 
   return (
     <div className="space-y-6">
@@ -316,6 +338,28 @@ console.log("tran",transferProducts, selectedSourceWarehouse);
           <CardTitle>All Warehouses</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-col md:flex-row gap-4 mb-4">
+            {/* Search */}
+            <Input
+              placeholder="Search by name, location, or status..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="md:max-w-sm"
+            />
+
+            {/* Status Filter */}
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+              <SelectTrigger className="md:w-[180px]">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="full">Full</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <Table>
             <TableHeader>
               <TableRow>
@@ -330,7 +374,15 @@ console.log("tran",transferProducts, selectedSourceWarehouse);
               </TableRow>
             </TableHeader>
             <TableBody>
-              {warehouses.map((wh) => (
+              {filteredWarehouses.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-6">
+                    No warehouses found
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {paginatedWarehouses.map((wh) => (
                 <TableRow key={wh.id}>
                   <TableCell className="font-medium">{wh.id}</TableCell>
                   <TableCell>{wh.name}</TableCell>
@@ -373,6 +425,29 @@ console.log("tran",transferProducts, selectedSourceWarehouse);
               ))}
             </TableBody>
           </Table>
+          <div className="flex items-center justify-between mt-4">
+            <div>
+              Page {currentPage} of {totalPages}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((prev) => prev - 1)}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === totalPages || totalPages === 0}
+                onClick={() => setCurrentPage((prev) => prev + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -606,7 +681,9 @@ console.log("tran",transferProducts, selectedSourceWarehouse);
                 const product = transferProducts.find((prod) => prod.productId === p.id)!
                 return (
                   <div key={p.id} className="grid items-center gap-1">
-                    <span className="flex-1">Quantity of {product.productName} you want to transfer</span>
+                    <span className="flex-1">
+                      Quantity of {product.productName} you want to transfer
+                    </span>
                     <Input
                       type="number"
                       min={1}

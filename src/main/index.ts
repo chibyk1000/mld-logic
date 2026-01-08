@@ -4,7 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { db } from './db'
 import bcrypt from 'bcryptjs'
-
+import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
 
@@ -81,6 +81,8 @@ app.whenReady().then(() => {
       return fail('Failed to fetch users')
     }
   })
+
+
 
   ipcMain.handle('export:csv', async (_, tableName: string) => {
     try {
@@ -170,6 +172,89 @@ ipcMain.handle('export:sql', async () => {
     return { error: 'Failed to export SQL' }
   }
 })
+  
+ipcMain.handle('db:import', async (_, { name, buffer }) => {
+  let db: any
+
+  try {
+    const dbPath =
+      process.env.NODE_ENV === 'development'
+        ? './data.db'
+        : path.join(process.resourcesPath, 'data.db')
+
+    const tempPath = path.join(app.getPath('temp'), name)
+
+    fs.writeFileSync(tempPath, Buffer.from(buffer))
+
+    // -----------------------------
+    // RAW SQLITE FILE → FULL REPLACE
+    // -----------------------------
+    if (name.endsWith('.db')) {
+      fs.copyFileSync(tempPath, dbPath)
+      return { success: true }
+    }
+
+    // -----------------------------
+    // SQL DUMP → SAFE RESTORE
+    // -----------------------------
+    if (name.endsWith('.sql')) {
+      const sql = fs.readFileSync(tempPath, 'utf-8')
+      db = new Database(dbPath)
+
+      // Disable FK checks
+      db.exec('PRAGMA foreign_keys = OFF;')
+
+      // 🔥 Clear existing data
+      db.exec(`
+        DELETE FROM User;
+        DELETE FROM Warehouse;
+        DELETE FROM Vendor;
+        DELETE FROM Product;
+        DELETE FROM Inventory;
+        DELETE FROM DeliveryOrder;
+        DELETE FROM Remittance;
+        DELETE FROM Agent;
+        DELETE FROM Client;
+      `)
+
+      // Reset AUTOINCREMENT only if supported
+      const hasSequenceTable = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'`)
+        .get()
+
+      if (hasSequenceTable) {
+        db.exec(`DELETE FROM sqlite_sequence;`)
+      }
+
+      // ✅ Execute dump AS-IS (no BEGIN/COMMIT here)
+      db.exec(sql)
+
+      // Re-enable FK checks
+      db.exec('PRAGMA foreign_keys = ON;')
+      db.close()
+
+      return { success: true }
+    }
+
+    return { success: false, error: 'Unsupported file type' }
+  } catch (err) {
+    console.error('DB IMPORT FAILED:', err)
+
+    // Best-effort cleanup
+    try {
+      if (db) {
+        db.exec('PRAGMA foreign_keys = ON;')
+        db.close()
+      }
+    } catch {}
+
+    return {
+      success: false,
+      error: 'Database import failed'
+    }
+  }
+})
+
 
 
   // -------------------- CREATE USER --------------------
@@ -198,10 +283,10 @@ ipcMain.handle('export:sql', async () => {
       const user: any = db
         .prepare('SELECT id, email, password FROM "User" WHERE email = ?')
         .get(email)
-      if (!user) return fail('Invalid email or password')
+      if (!user) return fail('Invalid details or password')
 
       const valid = await bcrypt.compare(password, user.password)
-      if (!valid) return fail('Invalid email or password')
+      if (!valid) return fail('Invalid details or password')
 
       return ok({ id: user.id, email: user.email })
     } catch (err) {
@@ -244,22 +329,44 @@ ipcMain.handle('export:sql', async () => {
   })
 
   // -------------------- CREATE WAREHOUSE --------------------
-  ipcMain.handle('warehouses:create', async (_, data) => {
-    try {
-      const id = crypto.randomUUID()
-      const stmt = db.prepare(`
-      INSERT INTO "Warehouse" (id, name, location, capacity, description, items, status)
+ipcMain.handle('warehouses:create', async (_, data) => {
+  try {
+    // 1️⃣ Check if warehouse already exists
+    const existing = db
+      .prepare(
+        `
+        SELECT id
+        FROM "Warehouse"
+        WHERE LOWER(name) = LOWER(?) AND LOWER(location) = LOWER(?)
+      `
+      )
+      .get(data.name.trim(), data.location.trim())
+
+    if (existing) {
+      return fail('Warehouse already exists for this location')
+    }
+
+    // 2️⃣ Create warehouse
+    const id = crypto.randomUUID()
+
+    const stmt = db.prepare(`
+      INSERT INTO "Warehouse"
+        (id, name, location, capacity, description, items, status)
       VALUES (?, ?, ?, ?, ?, 0, 'active')
     `)
-      stmt.run(id, data.name, data.location, data.capacity, data.description || null)
 
-      const warehouse = db.prepare('SELECT * FROM "Warehouse" WHERE id = ?').get(id)
-      return ok(warehouse)
-    } catch (err) {
-      console.error(err)
-      return fail('Failed to create warehouse')
-    }
-  })
+    stmt.run(id, data.name.trim(), data.location.trim(), data.capacity, data.description || null)
+
+    // 3️⃣ Return created warehouse
+    const warehouse = db.prepare('SELECT * FROM "Warehouse" WHERE id = ?').get(id)
+
+    return ok(warehouse)
+  } catch (err) {
+    console.error(err)
+    return fail('Failed to create warehouse')
+  }
+})
+
 
   // -------------------- UPDATE WAREHOUSE --------------------
   ipcMain.handle('warehouses:update', async (_, { id, data }) => {
@@ -352,24 +459,63 @@ ipcMain.handle('export:sql', async () => {
   })
 
   // -------------------- CREATE AGENT --------------------
-  ipcMain.handle('agents:create', async (_, data) => {
-    try {
-      const id = crypto.randomUUID()
-      const stmt = db.prepare(`
-      INSERT INTO "Agent" (id, fullName, email, phone, status, warehouseId)
+ipcMain.handle('agents:create', async (_, data) => {
+  try {
+    // 1️⃣ Basic validation
+    if (!data.fullName || !data.email || !data.phone) {
+      return fail('Full name, email, and phone are required')
+    }
+
+    // 2️⃣ Check if agent already exists (email OR phone)
+    const existingAgent = db
+      .prepare(
+        `
+        SELECT id
+        FROM "Agent"
+        WHERE LOWER(email) = LOWER(?)
+           OR phone = ?
+      `
+      )
+      .get(data.email.trim(), data.phone.trim())
+
+    if (existingAgent) {
+      return fail('Agent already exists with this email or phone number')
+    }
+
+    // 3️⃣ Check if warehouse exists
+    const warehouse = db.prepare(`SELECT * FROM "Warehouse" WHERE id = ?`).get(data.warehouseId)
+
+    if (!warehouse) {
+      return fail('Assigned warehouse does not exist')
+    }
+
+    // 4️⃣ Create agent
+    const id = crypto.randomUUID()
+
+    const stmt = db.prepare(`
+      INSERT INTO "Agent"
+        (id, fullName, email, phone, status, warehouseId)
       VALUES (?, ?, ?, ?, ?, ?)
     `)
-      stmt.run(id, data.fullName, data.email, data.phone, data.status || 'active', data.warehouseId)
 
-      const agent: any = db.prepare('SELECT * FROM "Agent" WHERE id = ?').get(id)
-      const warehouse = db.prepare('SELECT * FROM "Warehouse" WHERE id = ?').get(agent.warehouseId)
+    stmt.run(
+      id,
+      data.fullName.trim(),
+      data.email.trim().toLowerCase(),
+      data.phone.trim(),
+      data.status || 'active',
+      data.warehouseId
+    )
 
-      return ok({ ...agent, warehouse })
-    } catch (err) {
-      console.error(err)
-      return fail('Failed to create agent')
-    }
-  })
+    // 5️⃣ Return created agent + warehouse
+    const agent: any = db.prepare('SELECT * FROM "Agent" WHERE id = ?').get(id)
+
+    return ok({ ...agent, warehouse })
+  } catch (err) {
+    console.error(err)
+    return fail('Failed to create agent')
+  }
+})
 
   // -------------------- UPDATE AGENT --------------------
   ipcMain.handle('agents:update', async (_, { id, data }) => {
@@ -416,22 +562,56 @@ ipcMain.handle('export:sql', async () => {
   // CLIENTS
   //-------------------------------------------------------------
   // -------------------- CREATE CLIENT --------------------
-  ipcMain.handle('clients:create', async (_, data) => {
-    try {
-      const id = crypto.randomUUID()
-      const stmt = db.prepare(`
-      INSERT INTO "Client" (id, fullName, phone, email, address)
+ipcMain.handle('clients:create', async (_, data) => {
+  try {
+    // 1️⃣ Basic validation
+    if (!data.fullName || !data.phone) {
+      return fail('Full name and phone number are required')
+    }
+
+    // 2️⃣ Check if client already exists (phone OR email)
+    const existingClient = db
+      .prepare(
+        `
+        SELECT id
+        FROM "Client"
+        WHERE phone = ?
+           OR (email IS NOT NULL AND LOWER(email) = LOWER(?))
+      `
+      )
+      .get(data.phone.trim(), data.email?.trim() || '')
+
+    if (existingClient) {
+      return fail('Client already exists with this phone or email')
+    }
+
+    // 3️⃣ Create client
+    const id = crypto.randomUUID()
+
+    const stmt = db.prepare(`
+      INSERT INTO "Client"
+        (id, fullName, phone, email, address)
       VALUES (?, ?, ?, ?, ?)
     `)
-      stmt.run(id, data.fullName, data.phone, data.email || null, data.address || null)
 
-      const client = db.prepare('SELECT * FROM "Client" WHERE id = ?').get(id)
-      return ok(client)
-    } catch (err) {
-      console.error(err)
-      return fail('Failed to create client')
-    }
-  })
+    stmt.run(
+      id,
+      data.fullName.trim(),
+      data.phone.trim(),
+      data.email ? data.email.trim().toLowerCase() : null,
+      data.address?.trim() || null
+    )
+
+    // 4️⃣ Return created client
+    const client = db.prepare('SELECT * FROM "Client" WHERE id = ?').get(id)
+
+    return ok(client)
+  } catch (err) {
+    console.error(err)
+    return fail('Failed to create client')
+  }
+})
+
 
   // -------------------- LIST CLIENTS --------------------
   ipcMain.handle('clients:list', async () => {
@@ -614,31 +794,134 @@ ipcMain.handle('export:sql', async () => {
   // VENDORS
   //-------------------------------------------------------------
   // -------------------- CREATE VENDOR --------------------
-  ipcMain.handle('vendors:create', async (_, data) => {
-    try {
-      const id = crypto.randomUUID()
-      const stmt = db.prepare(`
-      INSERT INTO "Vendor" (id, companyName, contactName, phone, email, address, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
-      stmt.run(
-        id,
-        data.companyName,
-        data.contactName || null,
-        data.phone || null,
-        data.email || null,
-        data.address || null,
-        data.status || 'active'
+ipcMain.handle('vendors:create', async (_, data) => {
+  try {
+    // 1️⃣ Basic validation
+    if (!data.companyName) {
+      return fail('Company name is required')
+    }
+
+    // 2️⃣ Check if vendor already exists (by company name OR phone OR email)
+    const existingVendor = db
+      .prepare(
+        `
+        SELECT id
+        FROM "Vendor"
+        WHERE LOWER(companyName) = LOWER(?)
+           OR (phone IS NOT NULL AND phone = ?)
+           OR (email IS NOT NULL AND LOWER(email) = LOWER(?))
+      `
+      )
+      .get(
+        data.companyName.trim(),
+        data.phone?.trim() || '',
+        data.email?.trim().toLowerCase() || ''
       )
 
-      const vendor = db.prepare('SELECT * FROM "Vendor" WHERE id = ?').get(id)
-      return ok(vendor)
-    } catch (err) {
-      console.error(err)
-      return fail('Failed to create vendor')
+    if (existingVendor) {
+      return fail('Vendor already exists with this company name, phone, or email')
     }
-  })
 
+    // 3️⃣ Insert new vendor
+    const id = crypto.randomUUID()
+    const stmt = db.prepare(`
+      INSERT INTO "Vendor"
+        (id, companyName, contactName, phone, email, address, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    stmt.run(
+      id,
+      data.companyName.trim(),
+      data.contactName?.trim() || null,
+      data.phone?.trim() || null,
+      data.email?.trim().toLowerCase() || null,
+      data.address?.trim() || null,
+      data.status || 'active'
+    )
+
+    // 4️⃣ Return created vendor
+    const vendor = db.prepare('SELECT * FROM "Vendor" WHERE id = ?').get(id)
+    return ok(vendor)
+  } catch (err) {
+    console.error(err)
+    return fail('Failed to create vendor')
+  }
+})
+
+ipcMain.handle('vendors:summary', async (_, vendorId: string) => {
+  try {
+    if (!vendorId) return fail('Vendor ID is required')
+
+    // 1️⃣ Fetch vendor basic info
+    const vendor = db.prepare('SELECT * FROM "Vendor" WHERE id = ?').get(vendorId)
+
+    if (!vendor) return fail('Vendor not found')
+
+    // 2️⃣ Fetch products by this vendor
+    const products = db.prepare('SELECT * FROM "Product" WHERE vendorId = ?').all(vendorId)
+
+    // 3️⃣ Fetch delivery orders for this vendor
+    const orders = db
+      .prepare(
+        `SELECT do.*, c.fullName AS clientName, a.fullName AS agentName, w.name AS warehouseName
+         FROM "DeliveryOrder" do
+         LEFT JOIN "Client" c ON do.clientId = c.id
+         LEFT JOIN "Agent" a ON do.agentId = a.id
+         LEFT JOIN "Warehouse" w ON do.warehouseId = w.id
+         WHERE do.vendorId = ?`
+      )
+      .all(vendorId)
+
+    // 4️⃣ Fetch remittances for this vendor
+    const remittances = db
+      .prepare(
+        `SELECT r.*, 
+                SUM(ro.amountCharged) AS totalCharged, 
+                SUM(ro.receivedAmount) AS totalReceived
+         FROM "Remittance" r
+         LEFT JOIN "RemittanceOrder" ro ON ro.remittanceId = r.id
+         WHERE r.vendorId = ?
+         GROUP BY r.id`
+      )
+      .all(vendorId)
+
+    // 5️⃣ Fetch warehouses associated with this vendor
+    const warehouses = db
+      .prepare(
+        `SELECT w.*, vow.contractStart, vow.contractEnd
+         FROM "VendorOnWarehouse" vow
+         JOIN "Warehouse" w ON vow.warehouseId = w.id
+         WHERE vow.vendorId = ?`
+      )
+      .all(vendorId)
+
+    // 6️⃣ Fetch agents linked to vendor's warehouses
+    const warehouseIds = warehouses.map((w: any) => w.id)
+    let agents: any[] = []
+    if (warehouseIds.length > 0) {
+      const placeholders = warehouseIds.map(() => '?').join(',')
+      agents = db
+        .prepare(`SELECT * FROM "Agent" WHERE warehouseId IN (${placeholders})`)
+        .all(...warehouseIds)
+    }
+
+    // 7️⃣ Compile summary
+    const summary = {
+      vendor,
+      products,
+      orders,
+      remittances,
+      warehouses,
+      agents
+    }
+
+    return ok(summary)
+  } catch (err) {
+    console.error(err)
+    return fail('Failed to fetch vendor summary')
+  }
+})
   // -------------------- LIST VENDORS --------------------
   ipcMain.handle('vendors:list', async () => {
     try {
@@ -813,20 +1096,76 @@ ipcMain.handle('export:sql', async () => {
   // PRODUCTS
   //-------------------------------------------------------------
   // -------------------- CREATE PRODUCT --------------------
-  ipcMain.handle('products:create', async (_, data) => {
-    try {
-      const id = crypto.randomUUID()
-      const stmt = db.prepare(`
+ipcMain.handle('products:create', async (_, data) => {
+  try {
+    // 1️⃣ Basic validation
+    if (!data.vendorId) return fail('Vendor ID is required')
+    if (!data.name) return fail('Product name is required')
+
+    // 2️⃣ Check if product already exists for this vendor
+    const existingProduct = db
+      .prepare(
+        `
+        SELECT id
+        FROM "Product"
+        WHERE vendorId = ?
+          AND (LOWER(name) = LOWER(?) OR (sku IS NOT NULL AND sku = ?))
+      `
+      )
+      .get(data.vendorId, data.name.trim(), data.sku?.trim() || '')
+
+    if (existingProduct) {
+      return fail('Product already exists for this vendor with this name or SKU')
+    }
+
+    // 3️⃣ Insert new product
+    const id = crypto.randomUUID()
+    const stmt = db.prepare(`
       INSERT INTO "Product" (id, vendorId, name, description, price, sku)
       VALUES (?, ?, ?, ?, ?, ?)
     `)
-      stmt.run(id, data.vendorId, data.name, data.description || null, data.price, data.sku || null)
+    stmt.run(
+      id,
+      data.vendorId,
+      data.name.trim(),
+      data.description?.trim() || null,
+      data.price,
+      data.sku?.trim() || null
+    )
 
-      const product = db.prepare('SELECT * FROM "Product" WHERE id = ?').get(id)
-      return ok(product)
-    } catch (err) {
-      console.error(err)
-      return fail('Failed to create product')
+    // 4️⃣ Return the created product
+    const product = db.prepare('SELECT * FROM "Product" WHERE id = ?').get(id)
+    return ok(product)
+  } catch (err) {
+    console.error(err)
+    return fail('Failed to create product')
+  }
+})
+
+ipcMain.handle('products:delete', (_, { id }) => {
+  try {
+    db.prepare(`DELETE FROM "Product" WHERE id = ?`).run(id)
+    return ok(true)
+  } catch (e) {
+    return fail('Failed to delete product')
+  }
+})
+
+  ipcMain.handle('products:update', (_, { id, data }) => {
+    try {
+      db.prepare(
+        `
+      UPDATE "Product"
+      SET name = ?, sku = ?, price = ?, description = ?
+      WHERE id = ?
+    `
+      ).run(data.name, data.sku || null, data.price, data.description || null, id)
+
+      return ok(true)
+    } catch (e) {
+      console.log(e)
+
+      return fail('Failed to update product')
     }
   })
 
@@ -855,7 +1194,7 @@ ipcMain.handle('export:sql', async () => {
   ipcMain.handle('inventory:set', async (_, { vendorId, warehouseId, productId, quantity }) => {
     try {
       // Check if inventory already exists
-      const existing = db
+      const existing:any = db
         .prepare(
           `SELECT * FROM "Inventory" WHERE vendorId = ? AND warehouseId = ? AND productId = ?`
         )
@@ -863,10 +1202,11 @@ ipcMain.handle('export:sql', async () => {
 
       if (existing) {
         // Update quantity
-        db.prepare(
-          `UPDATE "Inventory" SET quantity = ?, updatedAt = CURRENT_TIMESTAMP
-           WHERE vendorId = ? AND warehouseId = ? AND productId = ?`
-        ).run(quantity, vendorId, warehouseId, productId)
+        fail("Inventory exists");
+        // db.prepare(
+        //   `UPDATE "Inventory" SET quantity = ?, updatedAt = CURRENT_TIMESTAMP
+        //    WHERE vendorId = ? AND warehouseId = ? AND productId = ?`
+        // ).run(quantity, vendorId, warehouseId, productId)
       } else {
         // Insert new record
         const id = crypto.randomUUID()
@@ -889,6 +1229,44 @@ ipcMain.handle('export:sql', async () => {
       return fail('Failed to set inventory')
     }
   })
+
+  ipcMain.handle(
+    'inventory:updateQuantity',
+    async (_, { inventoryId, quantity }) => {
+      try {
+        // Check if inventory exists
+        const existing: any = db
+          .prepare(
+            `SELECT * FROM "Inventory" WHERE id = ?`
+          )
+          .get(inventoryId)
+
+        if (!existing) {
+          return fail('Inventory does not exist. Use set handler to create it.')
+        }
+
+        // Update quantity by adding
+        db.prepare(
+          `UPDATE "Inventory" 
+       SET quantity = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE id = ?`
+        ).run(quantity, inventoryId)
+
+        // Return updated inventory
+        const inv = db
+          .prepare(
+            `SELECT * FROM "Inventory" WHERE id = ?`
+          )
+          .get(inventoryId)
+
+        return ok(inv)
+      } catch (err) {
+        console.error(err)
+        return fail('Failed to update inventory')
+      }
+    }
+  )
+
   // -------------------- LIST INVENTORY --------------------
   ipcMain.handle('inventory:list', async (_, filters) => {
     try {
@@ -1820,35 +2198,14 @@ ipcMain.handle(
   })
 
   // --- Income Records ---
-  ipcMain.handle('accounting:income', (_, period?: 'daily' | 'weekly' | 'monthly') => {
-    try {
-      // =====================
-      // DATE FILTERS (INLINE)
-      // =====================
-      let orderDateFilter = ''
-      let remittanceDateFilter = ''
-
-      switch (period) {
-        case 'daily':
-          orderDateFilter = `AND o.createdAt >= date('now', 'start of day')`
-          remittanceDateFilter = `AND ro.createdAt >= date('now', 'start of day')`
-          break
-        case 'weekly':
-          orderDateFilter = `AND o.createdAt >= date('now', '-6 days')`
-          remittanceDateFilter = `AND ro.createdAt >= date('now', '-6 days')`
-          break
-        case 'monthly':
-          orderDateFilter = `AND o.createdAt >= date('now', 'start of month')`
-          remittanceDateFilter = `AND ro.createdAt >= date('now', 'start of month')`
-          break
-      }
-
-      // =====================
-      // CLIENT ORDERS (NO REMITTANCE)
-      // =====================
-      const clientOrders = db
-        .prepare(
-          `
+ipcMain.handle('accounting:income', () => {
+  try {
+    // =====================
+    // CLIENT ORDERS
+    // =====================
+    const clientOrders = db
+      .prepare(
+        `
       SELECT
         o.id                        AS refId,
         'CLIENT_ORDER'              AS source,
@@ -1863,17 +2220,16 @@ ipcMain.handle(
       FROM "DeliveryOrder" o
       LEFT JOIN "Client" c ON c.id = o.clientId
       WHERE o.vendorId IS NULL
-      ${orderDateFilter}
     `
-        )
-        .all()
+      )
+      .all()
 
-      // =====================
-      // VENDOR REMITTANCE ORDERS
-      // =====================
-      const remittanceOrders = db
-        .prepare(
-          `
+    // =====================
+    // VENDOR REMITTANCE ORDERS
+    // =====================
+    const remittanceOrders = db
+      .prepare(
+        `
       SELECT
         o.id                        AS refId,
         'VENDOR_REMITTANCE'         AS source,
@@ -1888,244 +2244,191 @@ ipcMain.handle(
       FROM "RemittanceOrder" ro
       INNER JOIN "DeliveryOrder" o ON o.id = ro.orderId
       INNER JOIN "Vendor" v ON v.id = o.vendorId
-      WHERE 1=1
-      ${remittanceDateFilter}
     `
-        )
-        .all()
-
-      // =====================
-      // MERGE & NORMALIZE
-      // =====================
-      const rows = [...clientOrders, ...remittanceOrders]
-
-      return ok(
-        rows
-          .map((row: any) => {
-            const outstanding = (row.amountCharged || 0) - (row.paymentReceived || 0)
-
-            return {
-              id: row.refId,
-              source: row.source,
-
-              client: row.clientName,
-              vendor: row.vendorName,
-
-              amountCharged: row.amountCharged,
-              paymentReceived: row.paymentReceived,
-              outstanding,
-
-              date: row.date,
-              category: row.amountCharged >= 100_000 ? 'High Value' : 'Standard'
-            }
-          })
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       )
-    } catch (error) {
-      console.error(error)
-      return fail('Failed to load income report')
-    }
-  })
+      .all()
 
-  ipcMain.handle('accounting:expenses', (_, period?: 'daily' | 'weekly' | 'monthly') => {
-    try {
-      // Build the date filter directly
-      let dateCondition = ''
-      switch (period) {
-        case 'daily':
-          dateCondition = `WHERE createdAt >= date('now', 'start of day')`
-          break
-        case 'weekly':
-          dateCondition = `WHERE createdAt >= date('now', '-6 days')`
-          break
-        case 'monthly':
-          dateCondition = `WHERE createdAt >= date('now', 'start of month')`
-          break
-        default:
-          dateCondition = ''
-      }
+    // =====================
+    // MERGE & NORMALIZE
+    // =====================
+    const rows = [...clientOrders, ...remittanceOrders]
 
-      const rows = db
-        .prepare(
-          `
-        SELECT id, type, description, amount, createdAt as date
-        FROM "Expense"
-        ${dateCondition}
-        ORDER BY createdAt DESC
-      `
-        )
-        .all()
+    return ok(
+      rows
+        .map((row: any) => {
+          const outstanding = (row.amountCharged || 0) - (row.paymentReceived || 0)
 
-      return rows
-    } catch (error) {
-      console.error('Error fetching expenses:', error)
-      return []
-    }
-  })
+          return {
+            id: row.refId,
+            source: row.source,
+            client: row.clientName,
+            vendor: row.vendorName,
+            amountCharged: row.amountCharged,
+            paymentReceived: row.paymentReceived,
+            outstanding,
+            date: row.date,
+            category: row.amountCharged >= 100_000 ? 'High Value' : 'Standard'
+          }
+        })
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    )
+  } catch (error) {
+    console.error(error)
+    return fail('Failed to load income report')
+  }
+})
+
+
+ipcMain.handle('accounting:expenses', () => {
+  try {
+    const rows = db
+      .prepare(
+        `
+      SELECT id, type, description, amount, createdAt as date
+      FROM "Expense"
+      ORDER BY createdAt DESC
+    `
+      )
+      .all()
+
+    return rows
+  } catch (error) {
+    console.error('Error fetching expenses:', error)
+    return []
+  }
+})
+
 
   // --- Summary Metrics ---
-  ipcMain.handle('accounting:summary', (_, period?: 'daily' | 'weekly' | 'monthly') => {
-    try {
-      /** ============================
-       * DATE FILTERS
-       * ============================ */
-      let orderDateFilter = ''
-      let remittanceDateFilter = ''
-      let expenseDateFilter = ''
+ipcMain.handle('accounting:summary', () => {
+  try {
+    /** ============================
+     * CLIENT ORDERS (REGULAR)
+     * ============================ */
+    const clientIncome: any[] = db
+      .prepare(
+        `
+        SELECT
+          (o.serviceCharge + o.additionalCharge) AS charged,
+          o.amountReceived                     AS received
+        FROM "DeliveryOrder" o
+        WHERE o.vendorId IS NULL
+      `
+      )
+      .all()
 
-      switch (period) {
-        case 'daily':
-          orderDateFilter = `AND o.createdAt >= date('now', 'start of day')`
-          remittanceDateFilter = `WHERE ro.createdAt >= date('now', 'start of day')`
-          expenseDateFilter = `WHERE createdAt >= date('now', 'start of day')`
-          break
-        case 'weekly':
-          orderDateFilter = `AND o.createdAt >= date('now', '-6 days')`
-          remittanceDateFilter = `WHERE ro.createdAt >= date('now', '-6 days')`
-          expenseDateFilter = `WHERE createdAt >= date('now', '-6 days')`
-          break
-        case 'monthly':
-          orderDateFilter = `AND o.createdAt >= date('now', 'start of month')`
-          remittanceDateFilter = `WHERE ro.createdAt >= date('now', 'start of month')`
-          expenseDateFilter = `WHERE createdAt >= date('now', 'start of month')`
-          break
-        default:
-          orderDateFilter = ''
-          remittanceDateFilter = ''
-          expenseDateFilter = ''
-      }
+    /** ============================
+     * VENDOR REMITTANCE (VIP)
+     * ============================ */
+    const vendorIncome: any[] = db
+      .prepare(
+        `
+        SELECT
+          ro.amountCharged AS charged,
+          ro.receivedAmount AS received
+        FROM "RemittanceOrder" ro
+        INNER JOIN "Remittance" r ON r.id = ro.remittanceId
+      `
+      )
+      .all()
 
-      /** ============================
-       * CLIENT ORDERS (REGULAR)
-       * ============================ */
-      const clientIncome: any[] = db
-        .prepare(
-          `
-          SELECT
-            (o.serviceCharge + o.additionalCharge) AS charged,
-            o.amountReceived                     AS received
-          FROM "DeliveryOrder" o
-          WHERE o.vendorId IS NULL
-          ${orderDateFilter}
-          `
-        )
-        .all()
+    /** ============================
+     * EXPENSES
+     * ============================ */
+    const expenseRecords: any[] = db
+      .prepare(
+        `
+        SELECT type, amount
+        FROM "Expense"
+      `
+      )
+      .all()
 
-      /** ============================
-       * VENDOR REMITTANCE (VIP)
-       * ============================ */
-      const vendorIncome: any[] = db
-        .prepare(
-          `
-          SELECT
-            ro.amountCharged AS charged,
-            ro.receivedAmount AS received
-          FROM "RemittanceOrder" ro
-          INNER JOIN "Remittance" r ON r.id = ro.remittanceId
-          ${remittanceDateFilter}
-          `
-        )
-        .all()
+    /** ============================
+     * INCOME CALCULATION
+     * ============================ */
+    let regularCharged = 0
+    let regularReceived = 0
+    let regularPending = 0
 
-      /** ============================
-       * EXPENSES
-       * ============================ */
-      const expenseRecords: any[] = db
-        .prepare(
-          `
-          SELECT type, amount
-          FROM "Expense"
-          ${expenseDateFilter}
-          `
-        )
-        .all()
-
-      /** ============================
-       * INCOME CALCULATION
-       * ============================ */
-      let regularCharged = 0
-      let regularReceived = 0
-      let regularPending = 0
-
-      for (const r of clientIncome) {
-        const charged = r.charged || 0
-        const received = r.received || 0
-
-        regularCharged += charged
-        regularReceived += received
-        regularPending += charged - received
-      }
-
-      let vipCharged = 0
-      let vipReceived = 0
-      let vipPending = 0
-
-      for (const r of vendorIncome) {
-        const charged = r.charged || 0
-        const received = r.received || 0
-
-        vipCharged += charged
-        vipReceived += received
-        vipPending += charged - received
-      }
-
-      const totalCharged = regularCharged + vipCharged
-      const totalReceived = regularReceived + vipReceived
-      const totalPending = regularPending + vipPending
-
-      /** ============================
-       * EXPENSE BREAKDOWN
-       * ============================ */
-      const expenseTypes: Record<string, number> = {}
-      let totalExpenses = 0
-
-      for (const exp of expenseRecords) {
-        expenseTypes[exp.type] = (expenseTypes[exp.type] || 0) + exp.amount
-        totalExpenses += exp.amount
-      }
-
-      /** ============================
-       * PROFIT (CASH BASIS)
-       * ============================ */
-      const profit = totalReceived - totalExpenses
-
-      /** ============================
-       * RETURN SUMMARY
-       * ============================ */
-      return ok({
-        incomeBreakdown: {
-          vip: {
-            charged: vipCharged,
-            received: vipReceived,
-            pending: vipPending
-          },
-          regular: {
-            charged: regularCharged,
-            received: regularReceived,
-            pending: regularPending
-          },
-          totals: {
-            charged: totalCharged,
-            received: totalReceived,
-            pending: totalPending
-          }
-        },
-        expenseBreakdown: {
-          byType: expenseTypes,
-          total: totalExpenses
-        },
-        profitLoss: {
-          totalReceived,
-          totalExpenses,
-          profit,
-          outstanding: totalPending
-        }
-      })
-    } catch (error) {
-      console.error('Error fetching summary:', error)
-      return fail('Failed to load accounting summary')
+    for (const r of clientIncome) {
+      const charged = r.charged || 0
+      const received = r.received || 0
+      regularCharged += charged
+      regularReceived += received
+      regularPending += charged - received
     }
-  })
+
+    let vipCharged = 0
+    let vipReceived = 0
+    let vipPending = 0
+
+    for (const r of vendorIncome) {
+      const charged = r.charged || 0
+      const received = r.received || 0
+      vipCharged += charged
+      vipReceived += received
+      vipPending += charged - received
+    }
+
+    const totalCharged = regularCharged + vipCharged
+    const totalReceived = regularReceived + vipReceived
+    const totalPending = regularPending + vipPending
+
+    /** ============================
+     * EXPENSE BREAKDOWN
+     * ============================ */
+    const expenseTypes: Record<string, number> = {}
+    let totalExpenses = 0
+
+    for (const exp of expenseRecords) {
+      expenseTypes[exp.type] = (expenseTypes[exp.type] || 0) + exp.amount
+      totalExpenses += exp.amount
+    }
+
+    /** ============================
+     * PROFIT (CASH BASIS)
+     * ============================ */
+    const profit = totalReceived - totalExpenses
+
+    /** ============================
+     * RETURN SUMMARY
+     * ============================ */
+    return ok({
+      incomeBreakdown: {
+        vip: {
+          charged: vipCharged,
+          received: vipReceived,
+          pending: vipPending
+        },
+        regular: {
+          charged: regularCharged,
+          received: regularReceived,
+          pending: regularPending
+        },
+        totals: {
+          charged: totalCharged,
+          received: totalReceived,
+          pending: totalPending
+        }
+      },
+      expenseBreakdown: {
+        byType: expenseTypes,
+        total: totalExpenses
+      },
+      profitLoss: {
+        totalReceived,
+        totalExpenses,
+        profit,
+        outstanding: totalPending
+      }
+    })
+  } catch (error) {
+    console.error('Error fetching summary:', error)
+    return fail('Failed to load accounting summary')
+  }
+})
+
 
   // --- Create Expense Record ---
   ipcMain.handle(

@@ -65,6 +65,11 @@ export default function AgentList() {
   const [openEdit, setOpenEdit] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<any>(null)
   const [warehouses, setWarehouses] = useState<any[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [warehouseFilter, setWarehouseFilter] = useState<'all' | string>('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 10 // rows per page
 
   const {
     register,
@@ -78,20 +83,20 @@ export default function AgentList() {
     // @ts-ignore
     resolver: yupResolver(agentSchema),
     defaultValues: {
-      email: "",
-      name: "",
-      phone: "",
-      status: "active",
-      warehouse:""
+      email: '',
+      name: '',
+      phone: '',
+      status: 'active',
+      warehouse: ''
     }
   })
 
   const submitHandler = async (data: AgentFormValues) => {
     try {
-       const { name, warehouse,  ...rest } = data
+      const { name, warehouse, ...rest } = data
       const result = await window.api.createAgent({
         ...rest,
-        
+
         fullName: data.name,
         warehouseId: data.warehouse
       })
@@ -105,12 +110,12 @@ export default function AgentList() {
 
       toast.success('Agent added successfully')
 
-        const d = await window.api.listAgents()
-        console.log(data)
+      const d = await window.api.listAgents()
+      console.log(data)
 
-        setAgents(d.data)
+      setAgents(d.data)
       reset()
- 
+
       setOpenAdd(false)
     } catch (error) {}
   }
@@ -123,9 +128,8 @@ export default function AgentList() {
     setValue('phone', agent.phone)
     setValue('warehouse', agent.warehouse.id)
     // setValue('role', agent.role)
-    setValue('status', agent.status  as any)
+    setValue('status', agent.status as any)
   }
-  
 
   useEffect(() => {
     const fetchWarehouses = async () => {
@@ -184,10 +188,10 @@ export default function AgentList() {
   const handleDelete = async (id: string) => {
     try {
       await window.api.deleteAgent(id)
-         const data = await window.api.listAgents()
-         console.log(data)
+      const data = await window.api.listAgents()
+      console.log(data)
 
-         setAgents(data.data)
+      setAgents(data.data)
       setOpenEdit(false)
       toast.success('Agent deleted')
     } catch (err) {
@@ -221,6 +225,28 @@ export default function AgentList() {
       failed
     }
   })
+useEffect(() => {
+  setCurrentPage(1)
+}, [searchQuery, statusFilter, warehouseFilter])
+
+  const filteredAgents = agents.filter((agent) => {
+    const query = searchQuery.toLowerCase()
+
+    const matchesSearch =
+      agent.fullName.toLowerCase().includes(query) ||
+      agent.email.toLowerCase().includes(query) ||
+      agent.phone.toLowerCase().includes(query) ||
+      agent.warehouse.name.toLowerCase().includes(query)
+
+    const matchesStatus = statusFilter === 'all' ? true : agent.status === statusFilter
+
+    const matchesWarehouse =
+      warehouseFilter === 'all' ? true : agent.warehouse.id === warehouseFilter
+
+    return matchesSearch && matchesStatus && matchesWarehouse
+  })
+
+  const paginatedAgents = filteredAgents.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   return (
     <div className="space-y-6">
@@ -266,7 +292,7 @@ export default function AgentList() {
             <Users className="h-5 w-5 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{agents.length }</div>
+            <div className="text-2xl font-bold">{agents.length}</div>
           </CardContent>
         </Card>
 
@@ -279,7 +305,9 @@ export default function AgentList() {
             <UserCheck className="h-5 w-5 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{agents.filter((ag)=>ag.status === "active").length }</div>
+            <div className="text-2xl font-bold">
+              {agents.filter((ag) => ag.status === 'active').length}
+            </div>
           </CardContent>
         </Card>
 
@@ -330,6 +358,43 @@ export default function AgentList() {
           <CardTitle>All Agents</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-col md:flex-row gap-4 mb-4">
+            {/* Search */}
+            <Input
+              placeholder="Search name, email, phone, warehouse..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="md:max-w-sm"
+            />
+
+            {/* Status Filter */}
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+              <SelectTrigger className="md:w-[180px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Warehouse Filter */}
+            <Select value={warehouseFilter} onValueChange={(v) => setWarehouseFilter(v)}>
+              <SelectTrigger className="md:w-[220px]">
+                <SelectValue placeholder="Warehouse" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Warehouses</SelectItem>
+                {warehouses.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <Table>
             <TableHeader>
               <TableRow>
@@ -343,7 +408,7 @@ export default function AgentList() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {agents.map((agent) => {
+              {paginatedAgents.map((agent) => {
                 const now = new Date()
                 let filteredOrders = agent.deliveryOrders || []
                 if (reportPeriod === 'weekly') {
@@ -399,8 +464,37 @@ export default function AgentList() {
                   </TableRow>
                 )
               })}
+
+              {filteredAgents.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
+                    No agents found
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
+          <div className="flex justify-between items-center mt-4">
+            <Button
+              size="sm"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((prev) => prev - 1)}
+            >
+              Previous
+            </Button>
+
+            <span>
+              Page {currentPage} of {Math.ceil(filteredAgents.length / pageSize)}
+            </span>
+
+            <Button
+              size="sm"
+              disabled={currentPage === Math.ceil(filteredAgents.length / pageSize)}
+              onClick={() => setCurrentPage((prev) => prev + 1)}
+            >
+              Next
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

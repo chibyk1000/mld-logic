@@ -17,7 +17,7 @@ import {
   TableRow
 } from '@renderer/components/ui/table'
 import { Badge } from '@renderer/components/ui/badge'
-import { Plus, Package, DollarSign, TrendingUp, Pencil, Trash2, PackagePlus } from 'lucide-react'
+import { Plus, Package, DollarSign, TrendingUp, Pencil, Trash2,  Eye } from 'lucide-react'
 
 import { VIPClientForm } from '@renderer/components/VipClientForm'
 import { VIPClientEditForm } from '@renderer/components/VipEditForm'
@@ -25,8 +25,13 @@ import { OrderForm } from '@renderer/components/OrderForm'
 import { MetricCard } from '@renderer/components/MetricCard'
 import { ClientPerformanceAnalytics } from '@renderer/components/ClientPerformanceAnalytics'
 import { VendorGetPayload } from 'generated/prisma/models'
-import { AddProductForm } from './AddproductForm'
+
 import { toast } from 'react-toastify'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/components/ui/select'
+import { Input } from '@renderer/components/ui/input'
+
+import { useNavigate } from 'react-router-dom'
+
 
 export type Vendor = VendorGetPayload<{
   include: { deliveryOrders: true; products: true; inventory: true; warehouses: true }
@@ -34,13 +39,18 @@ export type Vendor = VendorGetPayload<{
 
 export default function VIPClients() {
   const [clients, setClients] = useState<Vendor[]>([])
-const [warehouses, setWarehouses] = useState([])
-const [products, setProducts] = useState([])
+  const [warehouses, setWarehouses] = useState([])
+  const [products, setProducts] = useState([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [stockFilter, setStockFilter] = useState<'all' | 'with-stock' | 'no-stock'>('all')
+  const [ordersFilter, setOrdersFilter] = useState<'all' | 'with-orders'>('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 10 // Number of rows per page
 
   const [isClientDialogOpen, setIsClientDialogOpen] = useState(false)
   const [isOrderDialogOpen, setIsOrderDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [isProductDialogOpen, setIsProductDialogOpen] = useState(false)
+  const navigate = useNavigate()
 
   const [selectedClient, setSelectedClient] = useState<Vendor | null>(null)
   const [stats, setStats] = useState<{
@@ -68,7 +78,7 @@ const [products, setProducts] = useState([])
       toast.error('Failed to load products')
     }
   }
-  
+
   /**
    * Load Vendors
    */
@@ -120,7 +130,10 @@ const [products, setProducts] = useState([])
       toast.error('Error adding client')
     }
   }
-console.log(clients);
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, stockFilter, ordersFilter])
 
   /**
    * Edit Client
@@ -128,8 +141,7 @@ console.log(clients);
   const handleEditClient = async (data: any) => {
     if (!selectedClient) return
     try {
- 
-      const{products, warehouses, inventory, ...rest} = data
+      const { products, warehouses, inventory, ...rest } = data
       await window.api.updateVendor(selectedClient.id, rest)
       toast.success('Client updated ✔️')
       setIsEditDialogOpen(false)
@@ -154,7 +166,6 @@ console.log(clients);
     }
   }
 
-
   /**
    * Open Edit
    */
@@ -163,13 +174,27 @@ console.log(clients);
     setIsEditDialogOpen(true)
   }
 
-  /**
-   * Open product form
-   */
-  const openAddProductDialog = (client: Vendor) => {
-    setSelectedClient(client)
-    setIsProductDialogOpen(true)
-  }
+  const filteredClients = clients.filter((client) => {
+    const query = searchQuery.toLowerCase()
+
+    const matchesSearch =
+      client.companyName?.toLowerCase().includes(query) ||
+      client.contactName?.toLowerCase().includes(query) ||
+      client.phone?.toLowerCase().includes(query) ||
+      client.email?.toLowerCase().includes(query)
+
+    const matchesStock =
+      stockFilter === 'all'
+        ? true
+        : stockFilter === 'with-stock'
+          ? (client.products?.length ?? 0) > 0
+          : (client.products?.length ?? 0) === 0
+
+    const matchesOrders = ordersFilter === 'all' ? true : (client.deliveryOrders?.length ?? 0) > 0
+
+    return matchesSearch && matchesStock && matchesOrders
+  })
+const paginatedClients = filteredClients.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   return (
     <div className="space-y-6">
@@ -201,30 +226,27 @@ console.log(clients);
                 warehouses={warehouses}
                 products={products}
                 onSubmit={async (orderData) => {
-     
                   try {
-const payload = {
-  vendorId: orderData.client,
-  warehouseId: orderData.warehouse,
-  productIds: orderData.products,
-  quantity: orderData.quantity,
-  serviceCharge: Number(orderData.serviceCharge),
-  additionalCharge: Number(orderData.additionalCharge),
-  collectPayment: orderData.collectPayment,
-  amountReceived: Number(orderData.amountReceived),
-  pickupContactName: orderData.pickupContactName,
-  pickupContactPhone: orderData.pickupContactPhone,
-  pickupInstructions: orderData.pickupInstructions,
-  deliveryContactName: orderData.deliveryContactName,
-  deliveryContactPhone: orderData.deliveryContactPhone,
-  deliveryInstructions: orderData.deliveryInstructions,
-  deliveryAddress: orderData.deliveryAddress,
+                    const payload = {
+                      vendorId: orderData.client,
+                      warehouseId: orderData.warehouse,
+                      productIds: orderData.products,
+                      quantity: orderData.quantity,
+                      serviceCharge: Number(orderData.serviceCharge),
+                      additionalCharge: Number(orderData.additionalCharge),
+                      collectPayment: orderData.collectPayment,
+                      amountReceived: Number(orderData.amountReceived),
+                      pickupContactName: orderData.pickupContactName,
+                      pickupContactPhone: orderData.pickupContactPhone,
+                      pickupInstructions: orderData.pickupInstructions,
+                      deliveryContactName: orderData.deliveryContactName,
+                      deliveryContactPhone: orderData.deliveryContactPhone,
+                      deliveryInstructions: orderData.deliveryInstructions,
+                      deliveryAddress: orderData.deliveryAddress
+                    } as any
 
-} as any
-                    
-                
                     const res = await window.api.createDeliveryOrder(payload)
-                    
+
                     console.log(res)
 
                     if (res.error) {
@@ -233,9 +255,9 @@ const payload = {
                     }
 
                     toast.success('Order created ✔️')
-                    setIsOrderDialogOpen(false)   
+                    setIsOrderDialogOpen(false)
                     await loadClients()
-                  } catch {   
+                  } catch {
                     toast.error('Failed to create order')
                   }
                 }}
@@ -264,10 +286,11 @@ const payload = {
               />
             </DialogContent>
           </Dialog>
+
+          {/* Vendor Summary Drawer */}
+
           {/* Edit CLIENT */}
           <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        
-
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add VIP Client</DialogTitle>
@@ -301,7 +324,7 @@ const payload = {
         />
       </div>
 
-      <ClientPerformanceAnalytics setStats={setStats} stats={stats}/>
+      <ClientPerformanceAnalytics setStats={setStats} stats={stats} />
 
       {/* TABLE */}
       <Card>
@@ -310,6 +333,39 @@ const payload = {
         </CardHeader>
 
         <CardContent>
+          <div className="flex flex-col md:flex-row gap-4 mb-4">
+            {/* Search */}
+            <Input
+              placeholder="Search company, contact, phone or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="md:max-w-sm"
+            />
+
+            {/* Stock Filter */}
+            <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as any)}>
+              <SelectTrigger className="md:w-[180px]">
+                <SelectValue placeholder="Stock" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Stock</SelectItem>
+                <SelectItem value="with-stock">With Stock</SelectItem>
+                <SelectItem value="no-stock">No Stock</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Orders Filter */}
+            <Select value={ordersFilter} onValueChange={(v) => setOrdersFilter(v as any)}>
+              <SelectTrigger className="md:w-[180px]">
+                <SelectValue placeholder="Orders" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Orders</SelectItem>
+                <SelectItem value="with-orders">Has Orders</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <Table>
             <TableHeader>
               <TableRow>
@@ -324,7 +380,15 @@ const payload = {
             </TableHeader>
 
             <TableBody>
-              {clients.map((client) => (
+              {paginatedClients.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
+                    No clients found
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {paginatedClients.map((client) => (
                 <TableRow key={client.id}>
                   <TableCell className="font-medium">{client.companyName}</TableCell>
 
@@ -341,14 +405,16 @@ const payload = {
                   </TableCell>
 
                   <TableCell className="text-right flex gap-2 justify-end">
-                    {/* Add Product */}
+                    {/* View Vendor */}
                     <Button
                       size="icon"
                       variant="ghost"
-                      onClick={() => openAddProductDialog(client)}
-                      title="Add Product"
+                      onClick={() => {
+                        navigate('/vendor/' + client.id)
+                      }}
+                      title="View Vendor Summary"
                     >
-                      <PackagePlus className="h-4 w-4" />
+                      <Eye className="h-4 w-4" />
                     </Button>
 
                     {/* Edit */}
@@ -375,36 +441,27 @@ const payload = {
               ))}
             </TableBody>
           </Table>
+          <div className="flex justify-between items-center mt-2">
+            <Button
+              size="sm"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((prev) => prev - 1)}
+            >
+              Previous
+            </Button>
 
-          {/* ADD PRODUCT MODAL */}
-          <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Add Vendor Product</DialogTitle>
-              </DialogHeader>
+            <span>
+              Page {currentPage} of {Math.ceil(filteredClients.length / pageSize)}
+            </span>
 
-              {selectedClient && (
-                <AddProductForm
-                  vendorId={selectedClient.id}
-                  onClose={() => setIsProductDialogOpen(false)}
-                  onSubmit={async (data) => {
-                    try {
-                      await window.api.createProduct({
-                        ...data,
-                        vendorId: selectedClient.id
-                      })
-                      toast.success('Product added ✔️')
-                      setIsProductDialogOpen(false)
-                      setSelectedClient(null)
-                      await loadClients()
-                    } catch {
-                      toast.error('Failed to add product')
-                    }
-                  }}
-                />
-              )}
-            </DialogContent>
-          </Dialog>
+            <Button
+              size="sm"
+              disabled={currentPage === Math.ceil(filteredClients.length / pageSize)}
+              onClick={() => setCurrentPage((prev) => prev + 1)}
+            >
+              Next
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

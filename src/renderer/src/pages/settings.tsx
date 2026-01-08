@@ -30,7 +30,8 @@ const EXPORT_OPTIONS = [
 ]
 
 export function SettingsPage() {
- 
+ const [isImporting, setIsImporting] = useState(false)
+
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set(['orders']))
   const [exportFormat, setExportFormat] = useState<ExportFormat>('json')
   const [isExporting, setIsExporting] = useState(false)
@@ -101,6 +102,38 @@ const [orders, setOrders] = useState<any[]>([])
       toast.error('Export failed')
     } finally {
       setIsExporting(false)
+    }
+  }
+
+  const handleDatabaseImport = async (file: File) => {
+    if (!file) return
+
+    if (!file.name.endsWith('.sql') && !file.name.endsWith('.db')) {
+      toast.error('Only .sql or .db files are allowed')
+      return
+    }
+
+    setIsImporting(true)
+
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+
+      const res = await window.api.importDatabase(
+        file.name,
+     Array.from(new Uint8Array(arrayBuffer))
+      )
+
+      if (res?.success) {
+        toast.success('Database imported successfully. Restarting app...')
+        setTimeout(() => window.location.reload(), 1500)
+      } else {
+        toast.error(res?.error || 'Import failed')
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to import database')
+    } finally {
+      setIsImporting(false)
     }
   }
 
@@ -303,6 +336,47 @@ useEffect(() => {
               <Download className="h-4 w-4" />
               {isExporting ? 'Exporting...' : 'Export Data'}
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Database Import</CardTitle>
+          <CardDescription>Restore a previously exported database (.sql or .db)</CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+            <p className="text-sm text-destructive font-medium">⚠ Warning</p>
+            <p className="text-sm text-muted-foreground">
+              Importing a database will <strong>overwrite your current data</strong>. This action
+              cannot be undone.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <input
+              type="file"
+              accept=".sql,.db"
+              className="hidden"
+              id="db-import"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleDatabaseImport(file)
+              }}
+            />
+
+            <Label
+              htmlFor="db-import"
+              className="cursor-pointer inline-flex items-center gap-2 rounded-md border px-4 py-2 hover:bg-muted"
+            >
+              📂 Choose Database File
+            </Label>
+
+            {isImporting && (
+              <span className="text-sm text-muted-foreground">Importing database…</span>
+            )}
           </div>
         </CardContent>
       </Card>

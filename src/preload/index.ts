@@ -71,6 +71,7 @@ const api = {
   // VENDORS
   // -----------------------------
   listVendors: () => ipcRenderer.invoke('vendors:list'),
+  getVendorSummary: (vendorId: string) => ipcRenderer.invoke('vendors:summary', vendorId),
   // -----------------------------
   getVendorStats: () => ipcRenderer.invoke('stats:vendor-performance'),
 
@@ -110,7 +111,7 @@ const api = {
   }) => ipcRenderer.invoke('products:create', data),
 
   updateProduct: (id: string, data: any) => ipcRenderer.invoke('products:update', { id, data }),
-
+  importDatabase: (name: string, buffer: any) => ipcRenderer.invoke('db:import', { name, buffer }),
   deleteProduct: (id: string) => ipcRenderer.invoke('products:delete', { id }),
 
   getProduct: (id: string) => ipcRenderer.invoke('products:get', { id }),
@@ -126,6 +127,11 @@ const api = {
     productId: string
     quantity: number
   }) => ipcRenderer.invoke('inventory:set', data),
+  updateInventoryQuanity: (data: {
+    inventoryId: string
+ 
+    quantity: number
+  }) => ipcRenderer.invoke('inventory:updateQuantity', data),
 
   updateInventory: (id: string, quantity: number) =>
     ipcRenderer.invoke('inventory:update', { id, quantity }),

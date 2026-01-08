@@ -12,6 +12,7 @@ import Accounting from './pages/accounting'
 import { ToastContainer } from 'react-toastify'
 import { SettingsPage } from './pages/settings'
 import { OrdersList } from './pages/orders'
+import VendorSummary from './pages/clients/vendorSummary'
 const App = () => {
   return (
     <div>
@@ -20,6 +21,7 @@ const App = () => {
         <Route path="/" element={<AppLayout />}>
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="warehouses" element={<WarehousePage />} />
+          <Route path="vendor/:id" element={<VendorSummary />} />
           <Route path="agents" element={<AgentList />} />
           <Route path="/vip-clients" element={<VIPClients />} />
           <Route path="/regular-clients" element={<RegularClients />} />

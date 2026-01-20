@@ -49,7 +49,7 @@ export function AddProductForm({
   } = useForm<ProductFormData>({
     resolver: yupResolver(schema),
     defaultValues: {
-      vendorId,
+      vendorId, 
       name: defaultValues?.name ?? '',
       description: defaultValues?.description ?? '',
       price: defaultValues?.price ?? 0,

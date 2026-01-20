@@ -1,5 +1,4 @@
 import { Route, Routes } from 'react-router-dom'
-import Login from './pages/login'
 import Dashboard from './pages/dashboard'
 import AppLayout from './layouts/app-layout'
 import WarehousePage from './pages/warehouses'
@@ -17,9 +16,8 @@ const App = () => {
   return (
     <div>
       <Routes>
-        <Route path="/" element={<Login />} />
         <Route path="/" element={<AppLayout />}>
-          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="" element={<Dashboard />} />
           <Route path="warehouses" element={<WarehousePage />} />
           <Route path="vendor/:id" element={<VendorSummary />} />
           <Route path="agents" element={<AgentList />} />

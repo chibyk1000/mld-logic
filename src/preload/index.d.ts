@@ -164,6 +164,14 @@ declare global {
       getDashboardShipmentAnalytics: () => Promise<any>
       getDashboardOrdersByLocation: () => Promise<any>
       getDashboardRecentEntities: () => Promise<any>
+      checkForUpdate: () => void
+      startDownload: () => void
+      quitAndInstall: () => void
+      onUpdateStatus: (callback: (text: string) => void) => void
+      onUpdateAvailable: (callback: (info: UpdateInfo) => void) => void
+      onUpdateProgress: (callback: (percent: number) => void) => void
+      onUpdateDownloaded: (callback: () => void) => void
+      onUpdateError: (callback: (error: string) => void) => void
     }
   }
 }

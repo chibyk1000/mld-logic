@@ -10,7 +10,7 @@ import path from 'path'
 
 import { Parser } from 'json2csv'
 import ExcelJS from 'exceljs'
-
+import { autoUpdater } from 'electron-updater'
 
 
 const EXPORT_DIR = path.join(app.getPath('documents'), 'Mdl-logistics-data')
@@ -38,7 +38,7 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
-
+setupAutoUpdater(mainWindow)
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -51,6 +51,53 @@ function createWindow(): void {
   }
 }
 
+// Disable automatic downloading so the user can choose to trigger it
+autoUpdater.autoDownload = false
+
+export function setupAutoUpdater(mainWindow: BrowserWindow) {
+  // 1. Check for updates
+  ipcMain.on('check-for-update', () => {
+    if (app.isPackaged) {
+      autoUpdater.checkForUpdatesAndNotify()
+    }
+  })
+
+  // 2. Start the download
+  ipcMain.on('start-download', () => {
+    autoUpdater.downloadUpdate()
+  })
+
+  // 3. Install the update on command
+  ipcMain.on('quit-and-install', () => {
+    autoUpdater.quitAndInstall()
+  })
+
+  // --- AutoUpdater Events forwarded to Renderer ---
+  
+  autoUpdater.on('checking-for-update', () => {
+    mainWindow.webContents.send('update-status', 'Checking for update...')
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    mainWindow.webContents.send('update-available', info)
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    mainWindow.webContents.send('update-status', 'App is up to date.')
+  })
+
+  autoUpdater.on('error', (err) => {
+    mainWindow.webContents.send('update-error', err.message)
+  })
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    mainWindow.webContents.send('download-progress', progressObj.percent)
+  })
+
+  autoUpdater.on('update-downloaded', () => {
+    mainWindow.webContents.send('update-downloaded')
+  })
+}
 // App ready
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
@@ -59,6 +106,8 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+
+  
   // Ping test
   ipcMain.on('ping', () => console.log('pong'))
 

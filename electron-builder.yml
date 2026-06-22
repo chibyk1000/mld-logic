@@ -1,8 +1,14 @@
 appId: com.electron.app
 productName: mld-logistics
+
 directories:
   buildResources: build
+  output: dist
+
 files:
+  # 1. Explicitly INCLUDE the compiled output from electron-vite
+  - out/**/*
+  # 2. EXCLUDE source files and development configs
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
@@ -10,35 +16,43 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!dev.db'
- 
+
 asarUnpack:
   - resources/**
-  
-  
+
+# Single, unified publish block for GitHub Updates
+publish:
+  provider: github
+  owner: chibyk1000
+  repo: mld-logic
+  releaseType: release # Options: draft, prerelease, release
+
 extraResources:
-  # copy prisma DB → packaged
+  # Copies Prisma DB → packaged application root
   - from: data.db
     to: data.db
 
- 
-
 win:
   executableName: mld-logistics
+
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+    NSCameraUsageDescription: "Application requests access to the device's camera."
+    NSMicrophoneUsageDescription: "Application requests access to the device's microphone."
+    NSDocumentsFolderUsageDescription: "Application requests access to the user's Documents folder."
+    NSDownloadsFolderUsageDescription: "Application requests access to the user's Downloads folder."
   notarize: false
+
 dmg:
   artifactName: ${name}-${version}.${ext}
+
 linux:
   target:
     - AppImage
@@ -46,11 +60,11 @@ linux:
     - deb
   maintainer: electronjs.org
   category: Utility
+
 appImage:
   artifactName: ${name}-${version}.${ext}
+
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
+
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/

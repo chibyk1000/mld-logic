@@ -50,7 +50,7 @@
     "cmdk": "^1.1.1",
     "dayjs": "^1.11.19",
     "dotenv": "^17.2.3",
-    "electron-updater": "^6.3.9",
+    "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
     "i": "^0.3.7",
     "json2csv": "^6.0.0-alpha.2",

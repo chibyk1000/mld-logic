@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-
+import type { UpdateInfo } from 'electron-updater'
 // Custom APIs for renderer
 const api = {
   // -----------------------------
@@ -129,7 +129,7 @@ const api = {
   }) => ipcRenderer.invoke('inventory:set', data),
   updateInventoryQuanity: (data: {
     inventoryId: string
- 
+
     quantity: number
   }) => ipcRenderer.invoke('inventory:updateQuantity', data),
 
@@ -212,7 +212,23 @@ const api = {
   getDashboardMetrics: () => ipcRenderer.invoke('dashboard:metrics'),
   getDashboardShipmentAnalytics: () => ipcRenderer.invoke('dashboard:shipmentsAnalytics'),
   getDashboardOrdersByLocation: () => ipcRenderer.invoke('dashboard:ordersByLocation'),
-  getDashboardRecentEntities: () => ipcRenderer.invoke('dashboard:recentEntities')
+  getDashboardRecentEntities: () => ipcRenderer.invoke('dashboard:recentEntities'),
+  checkForUpdate: () => ipcRenderer.send('check-for-update'),
+  startDownload: () => ipcRenderer.send('start-download'),
+  quitAndInstall: () => ipcRenderer.send('quit-and-install'),
+
+  onUpdateStatus: (callback) =>
+    ipcRenderer.on('update-status', (_, text: string) => callback(text)),
+
+  onUpdateAvailable: (callback) =>
+    ipcRenderer.on('update-available', (_, info: UpdateInfo) => callback(info)),
+
+  onUpdateProgress: (callback) =>
+    ipcRenderer.on('download-progress', (_, percent: number) => callback(percent)),
+
+  onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', () => callback()),
+
+  onUpdateError: (callback) => ipcRenderer.on('update-error', (_, error: string) => callback(error))
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

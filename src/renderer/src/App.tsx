@@ -12,9 +12,11 @@ import { ToastContainer } from 'react-toastify'
 import { SettingsPage } from './pages/settings'
 import { OrdersList } from './pages/orders'
 import VendorSummary from './pages/clients/vendorSummary'
+
 const App = () => {
   return (
     <div>
+ 
       <Routes>
         <Route path="/" element={<AppLayout />}>
           <Route path="" element={<Dashboard />} />
